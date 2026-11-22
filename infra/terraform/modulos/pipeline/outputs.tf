@@ -15,5 +15,5 @@ output "conexao_github_arn" {
 
 output "conexao_github_status" {
   description = "PENDING até alguém aprovar a conexão no console."
-  value       = var.conexao_github_arn == "" ? aws_codestarconnections_connection.github[0].connection_status : "externa"
+  value       = var.conexao_github_arn == "" ? aws_codeconnections_connection.github[0].connection_status : "externa"
 }

@@ -135,8 +135,8 @@ resource "aws_codepipeline" "principal" {
         FullRepositoryId     = var.repositorio_github
         BranchName           = var.branch # usado no início manual (Release change)
         OutputArtifactFormat = "CODEBUILD_CLONE_REF"
-        # Quem dispara é o bloco `trigger` acima, não a detecção implícita.
-        DetectChanges = "false"
+        # Sem DetectChanges: igual ao pipeline da mesma conta que dispara com
+        # push. Quem filtra a branch é o bloco `trigger` acima.
       }
     }
   }
