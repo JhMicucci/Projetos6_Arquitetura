@@ -1,15 +1,20 @@
 variable "nome" {
-  description = "Prefixo dos recursos, ex.: prumo-producao."
+  description = "Prefixo dos recursos do CI/CD, ex.: prumo-cicd. Não pode começar como o do ambiente."
+  type        = string
+}
+
+variable "prefixo_recursos_ambiente" {
+  description = "Prefixo dos recursos que o pipeline gerencia, ex.: prumo-producao."
   type        = string
 }
 
 variable "prefixo_logs" {
-  description = "Prefixo dos grupos de log, ex.: /prumo/producao."
+  description = "Prefixo dos grupos de log, ex.: /prumo/cicd."
   type        = string
 }
 
 variable "chave_kms_arn" {
-  description = "Chave KMS do ambiente."
+  description = "Chave KMS do CI/CD (artefatos, logs, projetos do CodeBuild)."
   type        = string
 }
 
@@ -40,24 +45,21 @@ variable "repositorio_ecr_arn" {
   type        = string
 }
 
-variable "codedeploy_aplicacao" {
-  description = "Nome da aplicação no CodeDeploy."
+variable "bucket_state" {
+  description = "Bucket do state do Terraform (saída do bootstrap)."
   type        = string
 }
 
-variable "codedeploy_aplicacao_arn" {
-  description = "ARN da aplicação no CodeDeploy."
+variable "prefixo_state" {
+  description = "Prefixo das chaves de state do ambiente dentro do bucket."
   type        = string
+  default     = "prumo/producao"
 }
 
-variable "codedeploy_grupo" {
-  description = "Nome do grupo de implantação."
-  type        = string
-}
-
-variable "dominio" {
-  description = "Domínio público do site, conferido pelo teste de fumaça."
-  type        = string
+variable "variaveis_terraform" {
+  description = "Variáveis do ambiente (o equivalente do terraform.tfvars) entregues como TF_VAR_*."
+  type        = map(string)
+  default     = {}
 }
 
 variable "url_site" {
@@ -66,15 +68,9 @@ variable "url_site" {
 }
 
 variable "url_repositorio" {
-  description = "URL pública do repositório (vira NEXT_PUBLIC_REPO_URL no build)."
+  description = "URL do repositório (vira NEXT_PUBLIC_REPO_URL no build)."
   type        = string
   default     = ""
-}
-
-variable "exigir_aprovacao" {
-  description = "Insere um estágio de aprovação manual antes do deploy."
-  type        = bool
-  default     = false
 }
 
 variable "imagem_codebuild" {
@@ -98,5 +94,5 @@ variable "retencao_artefatos_dias" {
 variable "apagar_bucket_com_conteudo" {
   description = "Permite que o terraform destroy apague o bucket de artefatos com conteúdo."
   type        = bool
-  default     = false
+  default     = true
 }

@@ -1,12 +1,17 @@
 # O pipeline, estágio por estágio:
 #
-#   Fonte ─> CI (seguranca ‖ qualidade ‖ jornadas) ─> Imagem ─> [Aprovacao] ─> Implantacao ─> Fumaca
+#   Fonte ─> Validacao ─> Imagem ─> Plano ─> Implantacao ─> Fumaca
+#            (seguranca ‖ iac ‖ qualidade ‖ observabilidade ‖ jornadas)
 #
-# CI: as fitness functions. Os três projetos rodam em paralelo e qualquer um
-#     que falhe para o pipeline antes de existir imagem.
-# Imagem: a imagem só vai para o ECR depois de passar pelo Trivy.
-# Implantacao: CodeDeploy na EC2, com rollback automático se a validação falhar.
+# Validacao: as fitness functions, em paralelo; qualquer uma reprova e nada
+#   é construído.
+# Imagem: site e migrador; só vão para o ECR depois do Trivy.
+# Plano: terraform plan salvo como artefato, com trava contra destruir dado.
+# Implantacao: aplica EXATAMENTE o plano salvo; termina com o ECS estável.
 # Fumaca: confere de fora, pela internet, o que está no ar.
+#
+# Dispara com push na branch configurada. Sem aprovação manual (decisão da
+# equipe): o push na `main` vai até a produção.
 
 data "aws_caller_identity" "atual" {}
 data "aws_region" "atual" {}
@@ -16,9 +21,11 @@ locals {
   regiao = data.aws_region.atual.region
 
   # O CodePipeline resolve isto para o SHA do commit que disparou a execução.
-  variaveis_commit = jsonencode([
+  variaveis_commit = [
     { name = "COMMIT_SHA", value = "#{Fonte.CommitId}", type = "PLAINTEXT" },
-  ])
+  ]
+
+  validacao = ["seguranca", "iac", "qualidade", "observabilidade", "jornadas"]
 }
 
 data "aws_iam_policy_document" "confianca_pipeline" {
@@ -55,22 +62,14 @@ data "aws_iam_policy_document" "pipeline" {
   }
 
   statement {
-    sid = "ChaveDoAmbiente"
-    actions = [
-      "kms:Decrypt",
-      "kms:Encrypt",
-      "kms:GenerateDataKey*",
-      "kms:DescribeKey",
-    ]
+    sid       = "ChaveDoCiCd"
+    actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey*", "kms:DescribeKey"]
     resources = [var.chave_kms_arn]
   }
 
   statement {
-    sid = "ConexaoGitHub"
-    actions = [
-      "codestar-connections:UseConnection",
-      "codeconnections:UseConnection",
-    ]
+    sid       = "ConexaoGitHub"
+    actions   = ["codestar-connections:UseConnection", "codeconnections:UseConnection"]
     resources = [local.conexao_arn]
   }
 
@@ -78,23 +77,6 @@ data "aws_iam_policy_document" "pipeline" {
     sid       = "CodeBuild"
     actions   = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
     resources = [for projeto in aws_codebuild_project.etapa : projeto.arn]
-  }
-
-  statement {
-    sid = "CodeDeploy"
-    actions = [
-      "codedeploy:CreateDeployment",
-      "codedeploy:GetApplication",
-      "codedeploy:GetApplicationRevision",
-      "codedeploy:GetDeployment",
-      "codedeploy:GetDeploymentConfig",
-      "codedeploy:RegisterApplicationRevision",
-    ]
-    resources = [
-      var.codedeploy_aplicacao_arn,
-      "arn:aws:codedeploy:${local.regiao}:${local.conta}:deploymentgroup:${var.codedeploy_aplicacao}/*",
-      "arn:aws:codedeploy:${local.regiao}:${local.conta}:deploymentconfig:*",
-    ]
   }
 }
 
@@ -120,6 +102,22 @@ resource "aws_codepipeline" "principal" {
     }
   }
 
+  # A regra, declarada: push na branch configurada inicia o pipeline.
+  # Conferir o que vale na AWS: aws codepipeline get-pipeline --query pipeline.triggers
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+
+    git_configuration {
+      source_action_name = "GitHub"
+
+      push {
+        branches {
+          includes = [var.branch]
+        }
+      }
+    }
+  }
+
   stage {
     name = "Fonte"
 
@@ -137,35 +135,17 @@ resource "aws_codepipeline" "principal" {
         FullRepositoryId     = var.repositorio_github
         BranchName           = var.branch # usado no início manual (Release change)
         OutputArtifactFormat = "CODEBUILD_CLONE_REF"
-        # Quem dispara é o bloco `trigger` abaixo, não a detecção implícita:
-        # é o par que a documentação da AWS prevê para gatilho com filtro.
+        # Quem dispara é o bloco `trigger` acima, não a detecção implícita.
         DetectChanges = "false"
       }
     }
   }
 
-  # A regra, declarada: push na branch configurada inicia o pipeline. Nenhum
-  # outro evento (pull request, outra branch) inicia. Para conferir o que está
-  # valendo na AWS: `aws codepipeline get-pipeline --query pipeline.triggers`.
-  trigger {
-    provider_type = "CodeStarSourceConnection"
-
-    git_configuration {
-      source_action_name = "GitHub"
-
-      push {
-        branches {
-          includes = [var.branch]
-        }
-      }
-    }
-  }
-
   stage {
-    name = "CI"
+    name = "Validacao"
 
     dynamic "action" {
-      for_each = ["seguranca", "qualidade", "jornadas"]
+      for_each = local.validacao
       content {
         name            = title(action.value)
         category        = "Test"
@@ -177,7 +157,7 @@ resource "aws_codepipeline" "principal" {
 
         configuration = {
           ProjectName          = aws_codebuild_project.etapa[action.value].name
-          EnvironmentVariables = local.variaveis_commit
+          EnvironmentVariables = jsonencode(local.variaveis_commit)
         }
       }
     }
@@ -187,36 +167,36 @@ resource "aws_codepipeline" "principal" {
     name = "Imagem"
 
     action {
-      name             = "ConstruirVarrerPublicar"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      version          = "1"
-      input_artifacts  = ["fonte"]
-      output_artifacts = ["pacote"]
+      name            = "SiteEMigrador"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      version         = "1"
+      input_artifacts = ["fonte"]
 
       configuration = {
         ProjectName          = aws_codebuild_project.etapa["imagem"].name
-        EnvironmentVariables = local.variaveis_commit
+        EnvironmentVariables = jsonencode(local.variaveis_commit)
       }
     }
   }
 
-  dynamic "stage" {
-    for_each = var.exigir_aprovacao ? [1] : []
-    content {
-      name = "Aprovacao"
+  stage {
+    name = "Plano"
 
-      action {
-        name     = "LiberarProducao"
-        category = "Approval"
-        owner    = "AWS"
-        provider = "Manual"
-        version  = "1"
+    action {
+      name             = "TerraformPlan"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
+      namespace        = "Plano"
+      input_artifacts  = ["fonte"]
+      output_artifacts = ["plano"]
 
-        configuration = {
-          CustomData = "Imagem do commit #{Fonte.CommitId} passou no CI e no Trivy. Liberar para producao?"
-        }
+      configuration = {
+        ProjectName          = aws_codebuild_project.etapa["plano"].name
+        EnvironmentVariables = jsonencode(local.variaveis_commit)
       }
     }
   }
@@ -225,16 +205,18 @@ resource "aws_codepipeline" "principal" {
     name = "Implantacao"
 
     action {
-      name            = "EC2"
-      category        = "Deploy"
+      name            = "TerraformApply"
+      category        = "Build"
       owner           = "AWS"
-      provider        = "CodeDeploy"
+      provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["pacote"]
+      namespace       = "Implantacao"
+      input_artifacts = ["fonte", "plano"]
 
       configuration = {
-        ApplicationName     = var.codedeploy_aplicacao
-        DeploymentGroupName = var.codedeploy_grupo
+        ProjectName          = aws_codebuild_project.etapa["implantacao"].name
+        PrimarySource        = "fonte"
+        EnvironmentVariables = jsonencode(local.variaveis_commit)
       }
     }
   }
@@ -251,8 +233,13 @@ resource "aws_codepipeline" "principal" {
       input_artifacts = ["fonte"]
 
       configuration = {
-        ProjectName          = aws_codebuild_project.etapa["fumaca"].name
-        EnvironmentVariables = local.variaveis_commit
+        ProjectName = aws_codebuild_project.etapa["fumaca"].name
+        # O que a implantação descobriu (endereços) chega aqui pelo namespace.
+        EnvironmentVariables = jsonencode(concat(local.variaveis_commit, [
+          { name = "URL_SITE", value = "#{Implantacao.URL_SITE}", type = "PLAINTEXT" },
+          { name = "DNS_ALB", value = "#{Implantacao.DNS_ALB}", type = "PLAINTEXT" },
+          { name = "IP_OBSERVABILIDADE", value = "#{Implantacao.IP_OBSERVABILIDADE}", type = "PLAINTEXT" },
+        ]))
       }
     }
   }

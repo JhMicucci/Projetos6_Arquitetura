@@ -1,6 +1,7 @@
-# CI · Jornadas: o Playwright contra o build de produção, em desktop e em
-# 360 px. As garantias que mais importam (404 em rota não liberada, conteúdo
-# futuro fora do bundle) só valem no build real, e é ele que a suíte sobe.
+# Validação · Jornadas: o Playwright contra o build de produção, em desktop e
+# em 360 px, com um Postgres descartável (a suíte cria as contas de login e
+# recarrega a base). As garantias que mais importam (404 em rota não liberada,
+# conteúdo futuro fora do bundle) só valem no build real.
 version: 0.2
 
 env:
@@ -8,6 +9,7 @@ env:
   variables:
     CI: "true"
     NEXT_TELEMETRY_DISABLED: "1"
+    DATABASE_URL_E2E: postgresql://postgres:postgres@127.0.0.1:5432/prumo_e2e
     PLAYWRIGHT_JUNIT_OUTPUT_NAME: relatorios/playwright.xml
 
 phases:
@@ -15,8 +17,15 @@ phases:
     runtime-versions:
       nodejs: 22
     commands:
+      - >-
+        docker run -d --name postgres -p 5432:5432
+        -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=prumo_e2e
+        public.ecr.aws/docker/library/postgres:16
       - npm ci --no-audit --no-fund
       - npx playwright install --with-deps chromium
+  pre_build:
+    commands:
+      - timeout 60 bash -c 'until docker exec postgres pg_isready -U postgres -q; do sleep 1; done'
   build:
     commands:
       - npx playwright test --reporter=list,junit

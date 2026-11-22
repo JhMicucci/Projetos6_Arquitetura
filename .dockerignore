@@ -12,6 +12,9 @@ next-env.d.ts
 .env*
 !.env.example
 *.pem
+**/*.pem
+# ...menos o pacote público de autoridades do RDS, que a imagem precisa.
+!certificados/rds-global-bundle.pem
 
 # Testes de ponta a ponta, relatórios e histórico do Git
 e2e

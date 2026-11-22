@@ -1,5 +1,5 @@
-# CI · Segurança: as fitness functions de segredo, dependência, licença e IaC.
-# O que cada uma mede está comentado em seguranca.sh.
+# Validação · Segurança: segredos, dependências, licenças e Dockerfile.
+# O que cada fitness function mede está comentado em seguranca.sh.
 version: 0.2
 
 env:
@@ -9,17 +9,13 @@ env:
     # ghcr.io devolve TOOMANYREQUESTS para download anônimo do banco do Trivy.
     TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
     TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
-    TRIVY_CHECKS_BUNDLE_REPOSITORY: public.ecr.aws/aquasecurity/trivy-checks
     TRIVY_CACHE_DIR: /root/.cache/trivy
     TRIVY_NO_PROGRESS: "true"
-    TF_PLUGIN_CACHE_DIR: /root/.terraform.d/plugin-cache
-    TF_IN_AUTOMATION: "true"
 
 phases:
   install:
     commands:
-      - mkdir -p "$TF_PLUGIN_CACHE_DIR"
-      - bash infra/codebuild/ferramentas.sh trivy gitleaks hadolint terraform
+      - bash infra/codebuild/ferramentas.sh trivy gitleaks hadolint
   build:
     commands:
       - bash infra/codebuild/seguranca.sh
@@ -33,4 +29,3 @@ reports:
 cache:
   paths:
     - /root/.cache/trivy/**/*
-    - /root/.terraform.d/plugin-cache/**/*

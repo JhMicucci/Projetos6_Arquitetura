@@ -1,0 +1,12 @@
+# Copie para terraform.tfvars (ignorado pelo Git) e preencha.
+
+# Saída do bootstrap: terraform -chdir=infra/terraform/bootstrap output -raw bucket
+bucket_state = "prumo-tfstate-123456789012"
+
+# Repassados ao pipeline, que aplica o ambiente com eles.
+cidrs_grafana        = ["203.0.113.10/32"]
+emails_alerta        = ["seu-email@exemplo.com"]
+orcamento_mensal_usd = 10
+
+# repositorio_github = "JhMicucci/Projetos6_Arquitetura"
+# branch             = "main"

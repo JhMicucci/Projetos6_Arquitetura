@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+# ...menos o pacote PÚBLICO de autoridades do RDS (só certificados, nenhuma
+# chave): a imagem precisa dele para conferir o TLS do Aurora.
+!certificados/rds-global-bundle.pem
 
 # debug
 npm-debug.log*

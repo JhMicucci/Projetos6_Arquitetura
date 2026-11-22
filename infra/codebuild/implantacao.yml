@@ -1,0 +1,39 @@
+# Implantação: aplica EXATAMENTE o plano salvo pelo estágio anterior. O
+# `wait_for_steady_state` do serviço ECS faz o apply só terminar com as
+# tarefas novas saudáveis; se elas não ficarem, o circuit breaker volta para a
+# revisão anterior e este estágio reprova.
+#
+# Os endereços que a fumaça precisa saem dos outputs e são exportados.
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    TF_PLUGIN_CACHE_DIR: /root/.terraform.d/plugin-cache
+  exported-variables:
+    - URL_SITE
+    - DNS_ALB
+    - IP_OBSERVABILIDADE
+
+phases:
+  install:
+    commands:
+      - mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - bash infra/codebuild/ferramentas.sh terraform
+  build:
+    commands:
+      - RAIZ=infra/terraform/ambientes/producao
+      - >-
+        terraform -chdir="$RAIZ" init -input=false -no-color
+        -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=$TF_STATE_REGIAO"
+      # O plano vem do artefato secundário `plano`.
+      - cp "${CODEBUILD_SRC_DIR_plano:?artefato do plano ausente}/tfplan" "$RAIZ/tfplan"
+      - terraform -chdir="$RAIZ" apply -input=false -no-color -lock-timeout=5m tfplan
+      - export URL_SITE="$(terraform -chdir="$RAIZ" output -raw url_site)"
+      - export DNS_ALB="$(terraform -chdir="$RAIZ" output -raw dns_alb)"
+      - export IP_OBSERVABILIDADE="$(terraform -chdir="$RAIZ" output -raw ip_observabilidade)"
+      - echo "No ar em $URL_SITE"
+
+cache:
+  paths:
+    - /root/.terraform.d/plugin-cache/**/*

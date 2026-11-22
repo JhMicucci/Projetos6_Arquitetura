@@ -1,8 +1,14 @@
-# Repositório de imagens do app. Tag imutável: o SHA do commit aponta sempre
-# para a mesma imagem, e o deploy usa o digest, não a tag. Uma imagem que
-# chegou aqui já passou pelo Trivy no CodeBuild; o scan do ECR é a segunda
-# opinião, contínua, sobre CVEs publicados depois do push.
+# Repositório de imagens do app (site e migrador, tags `<sha>` e
+# `migrador-<sha>`). Tag IMUTÁVEL: o SHA do commit aponta sempre para a mesma
+# imagem, e é ela que a task definition referencia. Uma imagem que chegou aqui
+# já passou pelo Trivy no CodeBuild; o scan do ECR é a segunda opinião,
+# contínua, sobre CVEs publicados depois do push.
+#
+# Cifra: com `chave_kms_arn`, a chave do cliente; sem ela, AES-256 gerenciado
+# pela AWS. O ambiente usa AES-256 de propósito: com uma chave de outra raiz
+# Terraform, quem puxa a imagem (as tarefas) dependeria de permissão nela.
 
+# trivy:ignore:AWS-0033
 resource "aws_ecr_repository" "app" {
   name                 = var.nome
   image_tag_mutability = "IMMUTABLE"
@@ -13,7 +19,7 @@ resource "aws_ecr_repository" "app" {
   }
 
   encryption_configuration {
-    encryption_type = "KMS"
+    encryption_type = var.chave_kms_arn == null ? "AES256" : "KMS"
     kms_key         = var.chave_kms_arn
   }
 }

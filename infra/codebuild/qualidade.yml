@@ -1,4 +1,4 @@
-# CI · Qualidade: as fitness functions que o próprio projeto já tinha, as
+# Validação · Qualidade: as fitness functions que o próprio projeto já tinha, as
 # mesmas do `npm run verificar`, mais lint e assinatura das dependências.
 #
 #   - tipos: ciclo publicado incompleto não compila

@@ -1,5 +1,6 @@
-# Pós-deploy: versão no ar, TLS, redirecionamento, cabeçalhos e portas,
-# medidos de fora contra produção. Ver fumaca.sh.
+# Fumaça: versão no ar, banco, TLS, redirecionamento, cabeçalhos, ALB fechado
+# para acesso direto e observabilidade fechada para a internet, medidos de
+# fora contra produção. Ver fumaca.sh.
 version: 0.2
 
 env:

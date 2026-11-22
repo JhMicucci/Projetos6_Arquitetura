@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Fitness functions de segurança do CI.
+# Fitness functions de segurança do código e das dependências.
 #
-# Cada função abaixo é uma propriedade que o repositório precisa manter, medida
-# por uma ferramenta, com um limiar que reprova. Todas rodam, mesmo que uma
-# falhe, e o script só sai com erro no fim: o log mostra o quadro inteiro de
-# uma vez, em vez de uma correção por execução.
+# Cada função é uma propriedade que o repositório precisa manter, medida por
+# uma ferramenta, com um limiar que reprova. Todas rodam, mesmo que uma falhe,
+# e o script só sai com erro no fim: o log mostra o quadro inteiro de uma vez.
+# (Terraform e Dockerfile de IaC ficam no estágio IaC, em iac.sh.)
 #
 # Roda igual no CodeBuild e na máquina de quem quiser conferir antes do push:
-#   bash infra/codebuild/ferramentas.sh trivy gitleaks hadolint terraform
+#   bash infra/codebuild/ferramentas.sh trivy gitleaks hadolint
 #   bash infra/codebuild/seguranca.sh
 set -uo pipefail
 
@@ -72,40 +72,16 @@ licencas_compativeis() {
     --exit-code 1 .
 }
 
-# 5. Infraestrutura como código sem configuração insegura: Terraform e
-#    Dockerfile. Exceção só por comentário `trivy:ignore` com justificativa
-#    ao lado do recurso.
-iac_sem_configuracao_insegura() {
-  local resultado=0
-  trivy config --severity "$SEVERIDADE" --skip-dirs "$IGNORAR_DIRS" --exit-code 1 . || resultado=$?
-  trivy config --severity "$SEVERIDADE" --skip-dirs "$IGNORAR_DIRS" \
-    --format template --template "$JUNIT" \
-    --output "$RELATORIOS/trivy-iac.xml" . >/dev/null 2>&1
-  return "$resultado"
-}
-
-# 6. Dockerfile dentro das boas práticas (versão fixa, usuário não root...).
+# 5. Dockerfile dentro das boas práticas (versão fixa, usuário não root...).
 dockerfile_conforme() {
   hadolint Dockerfile
-}
-
-# 7. Terraform formatado e válido contra o schema real dos providers.
-terraform_valido() {
-  terraform fmt -check -recursive infra/terraform || return 1
-  local raiz
-  for raiz in infra/terraform/bootstrap infra/terraform/ambientes/producao; do
-    terraform -chdir="$raiz" init -backend=false -input=false -no-color >/dev/null || return 1
-    terraform -chdir="$raiz" validate -no-color || return 1
-  done
 }
 
 etapa "segredos no historico (gitleaks)" segredos_no_historico
 etapa "dependencias sem CVE alta/critica (trivy fs)" dependencias_sem_cve
 etapa "segredos na arvore (trivy secret)" segredos_na_arvore
 etapa "licencas compativeis (trivy license)" licencas_compativeis
-etapa "IaC sem configuracao insegura (trivy config)" iac_sem_configuracao_insegura
 etapa "Dockerfile conforme (hadolint)" dockerfile_conforme
-etapa "Terraform formatado e valido" terraform_valido
 
 printf '\n===================================\n'
 if [ "${#falhas[@]}" -gt 0 ]; then

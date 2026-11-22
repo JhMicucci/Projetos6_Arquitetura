@@ -1,0 +1,30 @@
+# Plano: terraform plan do ambiente, com trava contra destruir dado. Ver plano.sh.
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    TF_PLUGIN_CACHE_DIR: /root/.terraform.d/plugin-cache
+  exported-variables:
+    - PLANO_RESUMO
+
+phases:
+  install:
+    commands:
+      - mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - bash infra/codebuild/ferramentas.sh terraform
+      - command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq jq)
+  build:
+    commands:
+      - bash infra/codebuild/plano.sh
+      # No shell do buildspec (e não no script) para o CodeBuild exportar.
+      - export PLANO_RESUMO="$(cat plano-resumo.txt)"
+
+artifacts:
+  base-directory: infra/terraform/ambientes/producao
+  files:
+    - tfplan
+
+cache:
+  paths:
+    - /root/.terraform.d/plugin-cache/**/*

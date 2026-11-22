@@ -1,0 +1,6 @@
+# Copie para backend.hcl (ignorado pelo Git) com a saída do bootstrap:
+#   terraform -chdir=infra/terraform/bootstrap output -raw backend_hcl | Out-File -Encoding ascii infra/terraform/cicd/backend.hcl
+# Depois: terraform init "-backend-config=backend.hcl"
+
+bucket = "prumo-tfstate-123456789012"
+region = "us-east-1"

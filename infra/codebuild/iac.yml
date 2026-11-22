@@ -1,0 +1,34 @@
+# Validação · IaC: terraform fmt e validate nas três raízes, TFLint e Trivy config.
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+    TRIVY_CHECKS_BUNDLE_REPOSITORY: public.ecr.aws/aquasecurity/trivy-checks
+    TRIVY_CACHE_DIR: /root/.cache/trivy
+    TRIVY_NO_PROGRESS: "true"
+    TF_PLUGIN_CACHE_DIR: /root/.terraform.d/plugin-cache
+    TF_IN_AUTOMATION: "true"
+    TFLINT_PLUGIN_DIR: /root/.tflint.d/plugins
+
+phases:
+  install:
+    commands:
+      - mkdir -p "$TF_PLUGIN_CACHE_DIR" "$TFLINT_PLUGIN_DIR"
+      - bash infra/codebuild/ferramentas.sh trivy terraform tflint
+  build:
+    commands:
+      - bash infra/codebuild/iac.sh
+
+reports:
+  iac:
+    files:
+      - relatorios/*.xml
+    file-format: JUNITXML
+
+cache:
+  paths:
+    - /root/.cache/trivy/**/*
+    - /root/.terraform.d/plugin-cache/**/*
+    - /root/.tflint.d/plugins/**/*

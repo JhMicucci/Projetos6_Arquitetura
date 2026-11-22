@@ -8,6 +8,16 @@ output "url_grafana" {
   value       = module.observabilidade.url_grafana
 }
 
+output "dns_alb" {
+  description = "DNS do ALB. A fumaça confere que acesso direto, sem passar pelo CloudFront, é recusado."
+  value       = module.balanceador.dns
+}
+
+output "ip_observabilidade" {
+  description = "IP público da EC2 de observabilidade. A fumaça confere que 3000 e 4318 estão fechadas para a internet."
+  value       = module.observabilidade.ip_publico
+}
+
 output "cluster_ecs" {
   description = "Cluster ECS."
   value       = module.aplicacao.cluster

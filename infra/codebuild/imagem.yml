@@ -1,4 +1,4 @@
-# Imagem: build → Trivy → SBOM → ECR → pacote do CodeDeploy. Ver imagem.sh.
+# Imagem: site e migrador → Trivy → SBOM → ECR. Ver imagem.sh.
 version: 0.2
 
 env:
@@ -21,13 +21,8 @@ phases:
 reports:
   imagem:
     files:
-      - relatorios/trivy-imagem.xml
+      - relatorios/*.xml
     file-format: JUNITXML
-
-artifacts:
-  base-directory: pacote
-  files:
-    - "**/*"
 
 cache:
   paths:

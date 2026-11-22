@@ -1,0 +1,44 @@
+# Validação · Observabilidade: a fitness function da telemetria, num estágio
+# próprio (como na Notas da Nuvem), para a reprovação aparecer com o nome dela.
+#
+#   - um lançamento real gera o span do INSERT dentro do trace da requisição
+#   - a consulta vai parametrizada, sem os valores
+#   - o texto digitado não aparece em nenhum span, atributo ou evento
+#   - a query string sai do nome e dos atributos dos spans
+# Ver src/lib/telemetria/observabilidade.test.ts e privacidade.test.ts.
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    CI: "true"
+    DATABASE_URL_TESTE: postgresql://postgres:postgres@127.0.0.1:5432/prumo_teste
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - >-
+        docker run -d --name postgres -p 5432:5432
+        -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=prumo_teste
+        public.ecr.aws/docker/library/postgres:16
+      - npm ci --no-audit --no-fund
+  pre_build:
+    commands:
+      - timeout 60 bash -c 'until docker exec postgres pg_isready -U postgres -q; do sleep 1; done'
+  build:
+    commands:
+      - >-
+        npx vitest run src/lib/telemetria
+        --reporter=default --reporter=junit --outputFile.junit=relatorios/observabilidade.xml
+
+reports:
+  observabilidade-fitness:
+    files:
+      - relatorios/observabilidade.xml
+    file-format: JUNITXML
+
+cache:
+  paths:
+    - /root/.npm/**/*

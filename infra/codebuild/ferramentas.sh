@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Instala as ferramentas das fitness functions com versão fixa e SHA-256
-# conferido. É o único lugar com versões de ferramenta de pipeline: para
-# atualizar, troque versão e hash juntos, tirando o hash do arquivo de
-# checksums publicado no release (docs/pipeline.md).
+# Instala as ferramentas do pipeline com versão fixa e SHA-256 conferido. É o
+# único lugar com versões de ferramenta: para atualizar, troque versão e hash
+# juntos, tirando o hash do arquivo de checksums publicado no release.
 #
-# Uso: ferramentas.sh trivy gitleaks hadolint terraform
+# Uso: ferramentas.sh trivy gitleaks hadolint terraform tflint
 set -euo pipefail
 
 TRIVY_VERSAO=0.76.2
@@ -18,6 +17,9 @@ HADOLINT_SHA256=c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
 
 TERRAFORM_VERSAO=1.17.1
 TERRAFORM_SHA256=4638628058e71a55212b1c563712eac03b902128f40740f3dc8174df12135061
+
+TFLINT_VERSAO=0.65.0
+TFLINT_SHA256=d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61
 
 DESTINO=${DESTINO:-/usr/local/bin}
 TMP=$(mktemp -d)
@@ -52,6 +54,12 @@ instalar_terraform() {
   baixar "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSAO}/terraform_${TERRAFORM_VERSAO}_linux_amd64.zip" terraform.zip "$TERRAFORM_SHA256"
   unzip -oq "$TMP/terraform.zip" terraform -d "$TMP"
   install -m 0755 "$TMP/terraform" "$DESTINO/terraform"
+}
+
+instalar_tflint() {
+  baixar "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSAO}/tflint_linux_amd64.zip" tflint.zip "$TFLINT_SHA256"
+  unzip -oq "$TMP/tflint.zip" tflint -d "$TMP"
+  install -m 0755 "$TMP/tflint" "$DESTINO/tflint"
 }
 
 for ferramenta in "$@"; do
