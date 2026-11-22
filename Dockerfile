@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Imagens do Prumo. Dois alvos saem daqui:
+# Imagens do Prumo. Dois alvos saem daquii:
 #
 #   execucao  (padrão)   o site: Node distroless + o servidor autocontido do
 #                        Next. Sem shell, sem npm, sem gerenciador de pacotes.
