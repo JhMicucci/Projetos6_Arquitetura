@@ -1,0 +1,349 @@
+import { Num } from '@/components/base/num'
+import { Etiqueta } from '@/components/base/selo'
+import { rotuloDaDirecao } from '@/components/sistema/base'
+import type { Avaliacao, PassoSubindicador } from '@/lib/calculo/tipos'
+import { cn } from '@/lib/utils'
+
+/**
+ * A tabela muda de coluna conforme o MÉTODO da regra, e só nisso.
+ *
+ * No método de atingimento a coluna do meio é "Atingimento", uma porcentagem do
+ * alvo. No método de notas ela é "Nota", de 0 a 1, tirada da régua de degraus.
+ * Usar o mesmo rótulo para as duas faria a tela mentir na coluna que mais
+ * importa, que é justamente a que explica a nota para quem vai contestá-la.
+ */
+const COLUNAS = [
+  'Indicador',
+  'Valor',
+  'Meta',
+  'Atingimento',
+  'Faixa',
+  'Pontos',
+  'Peso',
+  'Contribuição',
+] as const
+
+/**
+ * A MEMÓRIA DE CÁLCULO (§8.3).
+ *
+ * É o argumento central do projeto contra a planilha: qualquer número exibido
+ * responde "de onde veio?" em um clique. Tudo em fonte mono — a linguagem de
+ * auditoria — e dentro de um `<details>` nativo, sem uma linha de JavaScript.
+ */
+
+function porcentagem(valor: number | null, virgula = false): string {
+  if (valor === null) return ', '
+  const texto = (valor * 100).toFixed(1)
+  return `${virgula ? texto.replace('.', ',') : texto}%`
+}
+
+/**
+ * O número como a banca lê: vírgula decimal, sem mudar as casas. Usam o modo
+ * enxuto do slide e, com `virgula`, a tela do sistema; o Kick-off continua com
+ * o número cru do motor, como foi apresentado.
+ */
+function numeroBR(valor: number): string {
+  return valor.toLocaleString('pt-BR', { maximumFractionDigits: 4 })
+}
+
+export function MemoriaDeCalculo({
+  avaliacao,
+  aberta = false,
+  compacta = false,
+  enxuta = false,
+  virgula = false,
+}: {
+  avaliacao: Avaliacao
+  /** Já aberta ao carregar. O pitch usa; a tela "meu resultado" deixa fechada. */
+  aberta?: boolean
+  /**
+   * A MESMA memória, com menos linha por linha — para o slide.
+   *
+   * A versão completa mede cerca de 900px de altura, e num slide de 720
+   * linhas isso só cabia encolhendo tudo a 60%, o que deixava a conta
+   * ilegível a três metros do projetor. Ilegível é pior que ausente: o slide
+   * se chama "a nota com a conta aberta".
+   *
+   * O que sai é o detalhe de segundo nível: a lista de subindicadores dentro
+   * de cada linha e a coluna da faixa. O que fica é a cadeia inteira do
+   * argumento, em tamanho de leitura: valor, meta, atingimento, pontos, peso,
+   * contribuição e a conta final. Continua sendo o componente do sistema,
+   * lendo o que o motor calculou; não é imagem nem maquete.
+   */
+  compacta?: boolean
+  /**
+   * A compacta, para um PDF lido sem a fala (o SR1). Vírgula decimal, a
+   * regra só pela versão, e sem o que repete outra coluna ou precisa de
+   * explicação: a coluna Pontos (no método de notas ela é a própria Nota), a
+   * pontuação máxima, a soma dos pesos e a fórmula escrita por extenso. A
+   * conta final fica, com os números dela.
+   */
+  enxuta?: boolean
+  /** Vírgula decimal em todo número, sem mudar mais nada: a tela do sistema. */
+  virgula?: boolean
+}) {
+  const { memoria } = avaliacao
+  const porNotas = memoria.metodo === 'notas'
+  const corpo = enxuta ? 'text-base' : compacta ? 'text-sm' : 'text-xs'
+  const br = enxuta || virgula
+  const num = (valor: number) => (br ? numeroBR(valor) : valor)
+  const semPontos = enxuta && porNotas
+
+  return (
+    <details
+      open={aberta || undefined}
+      className="group overflow-hidden rounded-xl border border-linha bg-cartao"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 hover:bg-superficie">
+        <span>
+          <span className="fonte-display text-base">Memória de cálculo</span>
+          <span className="mt-0.5 block text-xs text-apagado">
+            O extrato da nota: a conta inteira, linha por linha, para conferir.
+          </span>
+        </span>
+        <span className="rotulo shrink-0 text-acento">
+          <span className="group-open:hidden">abrir</span>
+          <span className="hidden group-open:inline">fechar</span>
+        </span>
+      </summary>
+
+      <div className="border-t border-linha px-4 py-4">
+        {/* Antes da tabela, o modo de ler. Sem isto a tela mostrava a conta e
+            não dizia para que ela serve, e quem não é da área ficava perdido. */}
+        {compacta ? null : (
+        <p className="como-ler max-w-prose text-sm leading-relaxed">
+          {porNotas ? (
+            <>
+              Como ler: cada linha é um indicador. Dentro dela, cada subindicador que a unidade
+              preencheu vira uma nota de 0 a 1, pela régua da regra. A média dessas notas é a
+              nota do indicador. Ela é multiplicada pelo peso (o quanto aquele item vale), e a
+              soma disso, dividida pela soma dos pesos que entraram na conta, dá a nota de 0 a
+              100. Indicador sem lançamento sai da conta, e o peso dele sai junto.
+            </>
+          ) : (
+            <>
+              Como ler: cada linha é um indicador, e o valor dele nasce dos subindicadores que a
+              unidade preencheu, listados dentro da própria linha. O valor composto é comparado
+              com a meta do tipo da unidade e vira pontos. Os pontos são multiplicados pelo peso
+              (o quanto aquele item vale). A soma de tudo, dividida pelo máximo possível, dá a
+              nota de 0 a 100.
+            </>
+          )}
+        </p>
+        )}
+
+        <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-2', corpo, compacta ? '' : 'mt-4')}>
+          <span>
+            <span className="rotulo">Regra</span>{' '}
+            <Num>{enxuta ? `v${memoria.versaoRegra}` : `${memoria.regraId} v${memoria.versaoRegra}`}</Num>
+          </span>
+          {enxuta ? null : (
+            <>
+              <span>
+                <span className="rotulo">Pontuação máxima</span>{' '}
+                <Num>{num(memoria.pontuacaoMaxima)}</Num>
+              </span>
+              <span>
+                <span className="rotulo">Soma dos pesos</span> <Num>{num(memoria.somaPesos)}</Num>
+              </span>
+            </>
+          )}
+        </div>
+
+        <div className="mt-3 overflow-x-auto border border-linha">
+          <table
+            className={cn(
+              'numero w-full border-collapse',
+              corpo,
+              compacta ? 'min-w-[34rem]' : 'min-w-[46rem]',
+            )}
+          >
+            <thead>
+              <tr className="border-b border-linha bg-superficie">
+                {COLUNAS.filter((coluna) => !(compacta && coluna === 'Faixa'))
+                  .filter((coluna) => !(semPontos && coluna === 'Pontos'))
+                  .map((coluna) => (coluna === 'Atingimento' && porNotas ? 'Nota' : coluna))
+                  .map((coluna) => (
+                  <th key={coluna} className="rotulo px-2 py-1.5 text-left whitespace-nowrap">
+                    {coluna}
+                  </th>
+                  ))}
+              </tr>
+            </thead>
+            <tbody>
+              {memoria.passos.map((passo) => (
+                <tr
+                  key={passo.indicadorId}
+                  className="border-b border-linha last:border-0 align-top"
+                >
+                  <td className="px-2 py-1.5">
+                    <span className="font-sans">{passo.indicador}</span>
+                    {compacta ? null : (
+                      <span className="mt-0.5 block text-[0.65rem] text-apagado">
+                        {rotuloDaDirecao(passo.direcao)}{' '}
+                        · {passo.unidadeMedida}
+                      </span>
+                    )}
+                    {!compacta && passo.subPassos.length > 0 ? (
+                      <ul className="mt-1.5 space-y-0.5 border-l border-linha pl-2">
+                        {passo.subPassos.map((sub) => (
+                          <li key={sub.subindicadorId} className="text-[0.65rem] text-apagado">
+                            <span className="font-sans">{sub.subindicador}</span>:{' '}
+                            {descreverSubPasso(sub, num)}
+                            {sub.nota === null || sub.nota === undefined ? null : (
+                              <span className="text-texto"> → nota {num(sub.nota)}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {passo.valor === null ? (
+                      <span className="text-alerta">sem lançamento</span>
+                    ) : (
+                      num(passo.valor)
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{num(passo.meta)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {porNotas ? (
+                      passo.nota === null || passo.nota === undefined ? (
+                        <span className="text-alerta">sem nota</span>
+                      ) : (
+                        num(passo.nota)
+                      )
+                    ) : (
+                      porcentagem(passo.atingimento, br)
+                    )}
+                    {passo.aplicouTeto ? (
+                      <span
+                        className="ml-1 text-[0.65rem] text-acento"
+                        title="Atingimento limitado pelo teto da regra"
+                      >
+                        (teto)
+                      </span>
+                    ) : null}
+                  </td>
+                  {compacta ? null : (
+                    <td className="px-2 py-1.5 whitespace-nowrap text-apagado">{passo.faixa}</td>
+                  )}
+                  {semPontos ? null : <td className="px-2 py-1.5">{num(passo.pontos)}</td>}
+                  <td className="px-2 py-1.5">{num(passo.peso)}</td>
+                  <td className="px-2 py-1.5 font-semibold">{num(passo.contribuicao)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-linha-alta bg-superficie">
+                <td
+                  colSpan={(compacta ? 6 : 7) - (semPontos ? 1 : 0)}
+                  className="rotulo px-2 py-1.5 text-right"
+                >
+                  Soma das contribuições
+                </td>
+                <td className="px-2 py-1.5 font-semibold">{num(memoria.somaContribuicoes)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="mt-3 border-l-2 border-acento bg-superficie px-3 py-2">
+          <p className="rotulo">A conta final</p>
+          {enxuta ? null : <p className={cn('numero mt-1', corpo)}>{memoria.formula}</p>}
+          <p className={cn('numero mt-1.5', enxuta ? 'text-xl' : compacta ? 'text-lg' : 'text-sm')}>
+            ({num(memoria.somaContribuicoes)}) ÷ ({num(memoria.somaPesos)} ×{' '}
+            {num(memoria.pontuacaoMaxima)}) × 100 = <strong>{num(memoria.score)}</strong>
+          </p>
+        </div>
+
+        {avaliacao.avisos.length > 0 ? (
+          <div className="mt-3">
+            <p className="rotulo">Avisos</p>
+            <ul className="mt-1 space-y-1 text-xs">
+              {avaliacao.avisos.map((aviso) => (
+                <li key={aviso} className="flex gap-2 text-alerta">
+                  <span aria-hidden className="mt-1.5 h-px w-3 shrink-0 bg-alerta" />
+                  <span>{aviso}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+/** A conta de um subindicador, numa linha: valor direto ou numerador ÷ denominador. */
+function descreverSubPasso(
+  sub: PassoSubindicador,
+  num: (valor: number) => number | string,
+): string {
+  if (sub.aviso) return sub.aviso
+  const comoNumero = (valor: number | null | undefined) =>
+    valor === null || valor === undefined ? String(valor) : String(num(valor))
+  if (sub.tipo === 'razao') {
+    return `${comoNumero(sub.numerador)} ÷ ${comoNumero(sub.denominador)} = ${comoNumero(sub.valor)}%`
+  }
+  return comoNumero(sub.valor)
+}
+
+/**
+ * O cartão da nota. Aceita também a avaliação distrital: os três campos que
+ * ele mostra (score, faixa e avisos) existem nas duas.
+ */
+export function CartaoScore({
+  avaliacao,
+  percentualAConfirmar,
+  enxuto = false,
+  virgula = false,
+}: {
+  avaliacao: Pick<Avaliacao, 'score' | 'faixa' | 'avisos'>
+  /**
+   * No lugar do "recebe X% da gratificação", uma frase que diz que o
+   * percentual ainda não tem fonte. O percentual de cada classe é suposição
+   * nossa (está no Decreto 36.482/2023, que não temos), e o slide do SR1 vai
+   * para o PDF, que é lido sem a fala: lá ele não pode parecer norma.
+   */
+  percentualAConfirmar?: string
+  /** Vírgula decimal e "de 0 a 100", como no resto do deck do SR1. */
+  enxuto?: boolean
+  /** Só a vírgula decimal: a tela do sistema. */
+  virgula?: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-linha bg-superficie p-5">
+      <div>
+        <p className="rotulo">Nota do mês</p>
+        <p className="numero mt-1 text-5xl font-semibold leading-none">
+          {enxuto || virgula
+            ? avaliacao.score.toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
+            : avaliacao.score.toFixed(2)}
+        </p>
+        <p className={cn('mt-1 text-apagado', enxuto ? 'text-sm' : 'text-xs')}>
+          {enxuto ? 'de 0 a 100' : 'o score, de 0 a 100'}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="rotulo">Faixa de pagamento</p>
+        <p className="fonte-display mt-1 text-xl">{avaliacao.faixa?.rotulo ?? 'sem faixa'}</p>
+        {avaliacao.faixa ? (
+          <p className="numero mt-0.5 text-sm text-apagado">
+            {percentualAConfirmar ?? `recebe ${avaliacao.faixa.percentual}% da gratificação`}
+          </p>
+        ) : null}
+      </div>
+
+      {avaliacao.avisos.length > 0 ? (
+        <Etiqueta tom="alerta">
+          {avaliacao.avisos.length} aviso{avaliacao.avisos.length > 1 ? 's' : ''}
+        </Etiqueta>
+      ) : null}
+    </div>
+  )
+}

@@ -1,0 +1,1568 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   PRUMO — design tokens
+
+   Identidade "folha de especificação": modo escuro, tudo monoespaçado, blocos
+   delimitados por hairline de 1px que se encostam como tabela, um único acento.
+
+   O acento é o laranja da CESAR, tirado do próprio arquivo da logo (#F7580B) —
+   não do briefing, que trazia #F15A24. Um acento só: o verde da referência
+   original brigaria com a logo. Ver ADR-016 em docs/decisoes.md.
+
+   Tailwind v4 declara o tema em CSS, não em tailwind.config.js. Cada token vira
+   utilitário: --color-acento → bg-acento, text-acento, border-acento.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Fundo e superfície */
+  --color-fundo: #0a0b0a;
+  --color-superficie: #0f110e;
+
+  /* Hairlines — a única fonte de profundidade da página */
+  --color-linha: #23261f;
+  --color-linha-alta: #3a402f;
+
+  /* Texto */
+  --color-texto: #ffffff;
+  --color-apagado: #8c8f86;
+
+  /* Acento — laranja CESAR. 5,97:1 sobre o fundo: passa AA em corpo de texto */
+  --color-acento: #f7580b;
+  /* O laranja da marca, cru, sem ajuste de contraste. Serve a `accent-color` de
+     caixa de seleção e a qualquer lugar que precise da cor exata da logo, não
+     de uma versão legível como texto. */
+  --color-laranja: #f7580b;
+  /* O mesmo laranja a 12% sobre o fundo. Preenchimento de pílula: o acento
+     escrito por cima dá 5,47:1 */
+  --color-acento-fraco: #1f140a;
+  /* Texto sobre preenchimento sólido de acento */
+  --color-ink: #0a0b0a;
+
+  /* Estados — dessaturados para não competirem com o acento */
+  --color-ok: #7ea06a;
+  --color-alerta: #d2694f;
+
+  /* Os dois passos do gradiente do hero, a única imagem do site. Ficam em
+     token porque o modo claro precisa de um brilho de papel, não de um
+     buraco escuro no meio da página. */
+  --color-grao-1: #2a1408;
+  --color-grao-2: #120c07;
+
+  --font-display: var(--fonte-display), ui-monospace, monospace;
+  --font-mono: var(--fonte-mono), ui-monospace, 'SFMono-Regular', monospace;
+  --font-sans: var(--fonte-mono), ui-monospace, 'SFMono-Regular', monospace;
+
+  /* -------------------------------------------------------------------------
+     A PELE DO SISTEMA (ADR-031). O /sistema tem identidade própria: sans do
+     aparelho, cartões arredondados sobre fundo neutro, à la Apple. Os valores
+     moram AQUI (e no bloco claro) para obedecer a regra 10: cor nova entra nos
+     dois blocos, e o teste de contraste mede as duas paletas.
+  ------------------------------------------------------------------------- */
+
+  /* Cartão no tema do site: igual ao fundo (a profundidade vem da hairline).
+     A pele do sistema o remapeia para o cinza de cartão. */
+  --color-cartao: #0a0b0a;
+  /* Sombra dos cartões; no escuro precisa de mais peso para existir. */
+  --color-sombra: rgb(0 0 0 / 0.55);
+
+  --color-sis-fundo: #0d0d0f;
+  --color-sis-cartao: #1c1c1e;
+  --color-sis-campo: #2a2a2e;
+  --color-sis-linha: #313136;
+  --color-sis-linha-alta: #4b4b52;
+  --color-sis-texto: #f5f5f7;
+  --color-sis-apagado: #a3a3ab;
+  /* O laranja clareia um degrau: sobre o cartão #1c1c1e o tom do site daria
+     4,3:1 e reprovaria em corpo de texto. Continua o MESMO acento, ajustado
+     para a superfície, como o claro já faz (ADR-027). */
+  --color-sis-acento: #fb6b1f;
+  --color-sis-acento-fraco: #3a1c0b;
+}
+
+/* ---------------------------------------------------------------------------
+   MODO CLARO (ADR-027)
+
+   A mesma folha de especificação, no papel em vez da tela: fundo de papel
+   levemente quente, hairline bege, e o mesmo desenho de bloco. Nada de layout
+   muda aqui — só os onze tokens de cor.
+
+   O ACENTO PRECISA MUDAR DE VALOR, e isso é decisão, não descuido. O laranja
+   da CESAR (#F7580B) dá 5,97:1 sobre o fundo escuro e só 3,2:1 sobre papel:
+   reprovaria em AA como texto. No claro ele vira #A83C05, o mesmo laranja com
+   menos luz, que devolve exatamente os mesmos 5,97:1. A cor crua da marca
+   continua disponível em `--color-laranja` para preenchimento e para a logo.
+
+   `--color-ink` inverte junto: no escuro é o texto ESCURO sobre laranja claro;
+   no claro é o texto BRANCO sobre laranja escuro.
+
+   O tema vem de um cookie e é aplicado pelo servidor no atributo `data-tema`
+   do <html>. Por isso não existe piscada de tema errado no carregamento: o
+   HTML já chega pintado. Ver `src/lib/tema.ts`.
+--------------------------------------------------------------------------- */
+
+[data-tema='claro'] {
+  --color-fundo: #faf8f4;
+  --color-superficie: #efece4;
+
+  --color-linha: #ddd8cc;
+  --color-linha-alta: #a8a294;
+
+  --color-texto: #12140f;
+  --color-apagado: #54574d;
+
+  --color-acento: #a83c05;
+  --color-acento-fraco: #fbe7d9;
+  --color-ink: #ffffff;
+
+  --color-ok: #3f6b2c;
+  --color-alerta: #a23c22;
+
+  --color-grao-1: #f6ddc9;
+  --color-grao-2: #fbeee2;
+
+  --color-cartao: #faf8f4;
+  --color-sombra: rgb(24 20 12 / 0.08);
+
+  --color-sis-fundo: #f5f5f7;
+  --color-sis-cartao: #ffffff;
+  --color-sis-campo: #f0f0f3;
+  --color-sis-linha: #e4e4e9;
+  --color-sis-linha-alta: #c8c8cf;
+  --color-sis-texto: #1d1d1f;
+  --color-sis-apagado: #5d5d66;
+  --color-sis-acento: #a83c05;
+  --color-sis-acento-fraco: #fdeadd;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+
+/* O padrão de toda borda é a hairline. NA CAMADA BASE de propósito: fora de
+   camada, esta regra universal vencia TODA utilidade de cor de borda do
+   Tailwind (border-acento, border-ok, border-transparent), porque CSS sem
+   camada ganha de CSS em camada, não importa a especificidade. Foi um bug
+   silencioso da mesma família do --color-laranja (ADR-027): ninguém percebia
+   porque a hairline é discreta e parecia intenção. */
+@layer base {
+  * {
+    border-color: var(--color-linha);
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-fundo);
+  color: var(--color-apagado);
+  font-family: var(--font-mono);
+  /* Zero cortado: é uma folha de especificação, o 0 não pode virar O. */
+  font-feature-settings: 'zero' 1, 'kern' 1;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  text-rendering: optimizeLegibility;
+}
+
+/* Corpo de texto nunca passa de 62ch — mono cansa mais que sans em linha longa. */
+.prosa {
+  max-width: 62ch;
+}
+
+/* ---------------------------------------------------------------------------
+   Tipografia
+--------------------------------------------------------------------------- */
+
+.fonte-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-texto);
+  text-transform: lowercase;
+}
+
+/* A escala do briefing original (min 2.5rem) foi pensada para sans-serif.
+   Martian Mono tem avanço fixo e bem mais largo: "gratificação" são 12 caracteres
+   que a 2.5rem passam de 380px e estouram a tela de 360. O mínimo cai para
+   2.05rem, que é o maior valor em que a palavra mais longa ainda cabe. */
+.hero {
+  font-family: var(--font-display);
+  font-size: clamp(2.05rem, 9vw, 5.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--color-texto);
+  text-transform: lowercase;
+}
+
+/* Número grande — o acento no lugar de um parágrafo. */
+.stat {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 9vw, 4rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--color-acento);
+  font-variant-numeric: tabular-nums;
+}
+
+.titulo-bloco {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-texto);
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  line-height: 1.3;
+}
+
+/* Rótulo de estado/etapa — a única coisa em caixa alta. Na camada components
+   pela mesma razão da borda acima: `rotulo text-texto` era escrito por toda
+   parte esperando o utilitário vencer, e ele perdia em silêncio. */
+@layer components {
+  .rotulo {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-apagado);
+  }
+}
+
+/* Números, datas, scores e memória de cálculo. Tudo já é mono; aqui o que
+   importa é a tabularidade, para as colunas alinharem. */
+.numero {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'zero' 1;
+}
+
+/* Numeração de etapa: 01, 02, 03 — grande e recuada, só quando a ordem
+   significa alguma coisa. */
+.ordinal {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  line-height: 1;
+  color: var(--color-linha-alta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+   Blocos de borda colapsada
+
+   Cada bloco tem 1px de borda e -1px de margem: as linhas se encostam e a
+   página vira uma tabela. Sem gap, sem sombra, sem raio.
+--------------------------------------------------------------------------- */
+
+.bloco {
+  border: 1px solid var(--color-linha);
+  margin-top: -1px;
+  padding: 40px 24px;
+  position: relative;
+}
+
+@media (min-width: 768px) {
+  .bloco {
+    padding: 72px 56px;
+  }
+}
+
+/* Variante compacta, para linhas de tabela e itens de lista densos. */
+.bloco-raso {
+  border: 1px solid var(--color-linha);
+  margin-top: -1px;
+  padding: 20px 24px;
+  position: relative;
+}
+
+/* Grade de blocos: as bordas verticais também colapsam. */
+.grade-blocos {
+  display: grid;
+}
+
+.grade-blocos > * {
+  margin-left: -1px;
+}
+
+@media (min-width: 768px) {
+  .grade-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grade-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Pílula — a única coisa arredondada da identidade. Em camada, como o rótulo. */
+@layer components {
+.pilula {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid var(--color-linha);
+  /* Sem nowrap: em 360px uma pílula longa estourava a viewport em vez de
+     quebrar. Quem precisa de nowrap pede explicitamente. */
+  text-wrap: balance;
+}
+
+.pilula-acento {
+  background: var(--color-acento-fraco);
+  border-color: transparent;
+  color: var(--color-acento);
+}
+}
+
+/* ---------------------------------------------------------------------------
+   Fundo granulado — a única imagem da página.
+
+   Gradiente radial no laranja da casa, escurecido até o preto, com ruído SVG
+   por cima. Fica atrás do hero e em mais nenhum lugar.
+--------------------------------------------------------------------------- */
+
+.grao {
+  position: relative;
+  isolation: isolate;
+  background: radial-gradient(
+    120% 90% at 50% 0%,
+    var(--color-grao-1) 0%,
+    var(--color-grao-2) 45%,
+    var(--color-fundo) 100%
+  );
+}
+
+.grao::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.38;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* No papel, `overlay` a 38% vira sujeira cinza. `multiply` bem mais fraco
+   mantém a mesma textura de grão sem encardir o fundo. */
+[data-tema='claro'] .grao::after {
+  opacity: 0.12;
+  mix-blend-mode: multiply;
+}
+
+/* ---------------------------------------------------------------------------
+   Conector do fluxo vertical: 40px de linha tracejada entre dois nós.
+--------------------------------------------------------------------------- */
+
+.conector {
+  width: 1px;
+  height: 40px;
+  margin-inline: auto;
+  background-image: linear-gradient(
+    to bottom,
+    var(--color-linha-alta) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 1px 12px;
+  background-repeat: repeat-y;
+}
+
+/* ---------------------------------------------------------------------------
+   Motion — quatro coisas, e nada além.
+--------------------------------------------------------------------------- */
+
+/* 1. Cursor piscando no fim da headline. */
+.cursor::after {
+  content: '_';
+  color: var(--color-acento);
+  animation: piscar 1s steps(1) infinite;
+}
+
+@keyframes piscar {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* O mesmo cursor, aplicado a um caractere que já está no texto: o `_` da
+   marca na capa e no fechamento do pitch. */
+.pisca {
+  animation: piscar 1.1s steps(1) infinite;
+}
+
+/* 2. Reveal no scroll. Sem JS: `animation-timeline: view()` onde houver
+   suporte; onde não houver, o bloco simplesmente já está visível. */
+@supports (animation-timeline: view()) {
+  .revelar {
+    animation: entrar linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 40%;
+  }
+}
+
+@keyframes entrar {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 3. A linha tracejada do fluxo se desenha conforme o scroll. */
+@supports (animation-timeline: view()) {
+  .conector-anima {
+    animation: desenhar linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 30%;
+  }
+}
+
+@keyframes desenhar {
+  from {
+    height: 0;
+  }
+  to {
+    height: 40px;
+  }
+}
+
+/* 4. O hover de inversão do CTA vive em botao.tsx. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .cursor::after,
+  .pisca {
+    opacity: 1;
+    animation: none;
+  }
+
+  .revelar,
+  .conector-anima {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* O deck inteiro chega pronto: sem cascata, sem contador, e o ponto que
+     trava no slide do problema simplesmente fica parado onde ele trava. */
+  .slide-corpo > *,
+  .cascata > *,
+  .odometro,
+  .risco-anima,
+  .fantasma,
+  .horizonte,
+  .viajante {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .viajante {
+    left: 50%;
+  }
+
+  .progresso-deck {
+    transition: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Acessibilidade
+--------------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--color-acento);
+  outline-offset: 2px;
+}
+
+.pular-para-conteudo {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+
+.pular-para-conteudo:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-acento);
+  color: var(--color-ink);
+}
+
+@media print {
+  .sem-impressao {
+    display: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   A PELE DO SISTEMA (ADR-031)
+
+   O /sistema fala com servidor público, não com banca técnica: aqui a letra é
+   a sans do próprio aparelho, os cartões são arredondados e o fundo é neutro.
+   Tudo por REMAPEAMENTO de token: os utilitários continuam os mesmos
+   (bg-fundo, border-linha, text-apagado), e é o escopo que troca o valor.
+   Nenhuma cor literal aqui dentro: só var(), então os dois temas funcionam.
+
+   Estas regras ficam FORA de @layer de propósito: CSS sem camada vence
+   utilitário do Tailwind, e é isso que permite reestilizar sem tocar no site.
+--------------------------------------------------------------------------- */
+
+[data-pele='sistema'] {
+  --color-fundo: var(--color-sis-fundo);
+  --color-cartao: var(--color-sis-cartao);
+  --color-superficie: var(--color-sis-campo);
+  --color-linha: var(--color-sis-linha);
+  --color-linha-alta: var(--color-sis-linha-alta);
+  --color-texto: var(--color-sis-texto);
+  --color-apagado: var(--color-sis-apagado);
+  --color-acento: var(--color-sis-acento);
+  --color-acento-fraco: var(--color-sis-acento-fraco);
+
+  --font-sistema: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI',
+    Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif;
+
+  font-family: var(--font-sistema);
+  font-size: 1rem;
+  line-height: 1.55;
+  letter-spacing: -0.011em;
+  color: var(--color-texto);
+  font-feature-settings: 'kern' 1;
+}
+
+/* Títulos em caixa natural e peso alto; o minúsculo é identidade do site. */
+[data-pele='sistema'] :where(.fonte-display) {
+  font-family: var(--font-sistema);
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  text-transform: none;
+}
+
+[data-pele='sistema'] :where(.rotulo) {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-pele='sistema'] :where(.pilula) {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  background: var(--color-superficie);
+  border-color: transparent;
+  padding: 0.3rem 0.8rem;
+}
+
+[data-pele='sistema'] :where(.pilula-acento) {
+  background: var(--color-acento-fraco);
+  color: var(--color-acento);
+}
+
+[data-pele='sistema'] :where(.numero, .ordinal) {
+  font-family: var(--font-sistema);
+}
+
+/* Campos no desenho de formulário da pele: preenchimento, canto, sem borda.
+   16px de corpo evita o zoom automático do iOS ao focar. */
+[data-pele='sistema']
+  :where(input:not([type='checkbox'], [type='radio'], [type='hidden']), select, textarea) {
+  border-radius: 12px;
+  background-color: var(--color-superficie);
+  border-color: transparent;
+  padding: 0.55rem 0.85rem;
+  font-size: 1rem;
+  color: var(--color-texto);
+}
+
+[data-pele='sistema'] :where(input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-acento);
+  outline-offset: 1px;
+}
+
+[data-pele='sistema'] :where(input[type='checkbox']) {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+/* Botões viram pílula, em caixa natural. */
+[data-pele='sistema'] :where(button, a[class~='justify-center']) {
+  border-radius: 999px;
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+
+/* Toda caixa com borda ganha canto arredondado por padrão da pele. */
+[data-pele='sistema'] :where(div, section, form, ol, ul, details, p)[class~='border'] {
+  border-radius: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+   O DECK DO PITCH (/pitch)
+
+   Uma pilha de slides que vira apresentação quando o JavaScript liga o modo
+   deck. Mesmos tokens, mesmas hairlines: cada slide é um .bloco que ocupa a
+   tela inteira. Sem JavaScript, e no papel, a pilha continua legível.
+--------------------------------------------------------------------------- */
+
+.cromo {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--color-linha);
+  background: color-mix(in srgb, var(--color-fundo) 85%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.slide {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* `safe`: quando o conteúdo passa da altura, ele cresce para baixo em vez
+     de sumir por cima do topo, onde ninguém consegue rolar. */
+  justify-content: safe center;
+  min-height: 100dvh;
+  border: 1px solid var(--color-linha);
+  margin-top: -1px;
+  padding: 48px 24px 64px;
+}
+
+@media (min-width: 768px) {
+  .slide {
+    padding: 48px 72px 72px;
+  }
+}
+
+/* Numa coluna flex, tudo estica na horizontal por padrão; imagem e link
+   esticados viram borrão. Cada filho ocupa só a própria largura. */
+.slide-corpo > * {
+  align-self: flex-start;
+}
+
+.slide-corpo > ol,
+.slide-corpo > ul,
+.slide-corpo > dl,
+.slide-corpo > div,
+.slide-corpo > details {
+  align-self: stretch;
+}
+
+.slide-titulo {
+  max-width: 34ch;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3.6vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--color-texto);
+  text-transform: lowercase;
+}
+
+.slide-apoio {
+  max-width: 62ch;
+  margin-top: 1rem;
+  font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+  line-height: 1.6;
+}
+
+.slide-rodape {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  left: 24px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--color-apagado);
+  text-transform: lowercase;
+}
+
+@media (min-width: 768px) {
+  .slide-rodape {
+    right: 72px;
+    left: 72px;
+  }
+}
+
+/* As notas do apresentador: um <details> nativo, aberto pela tecla `n`. */
+.notas {
+  margin-top: 1.5rem;
+  border: 1px solid var(--color-linha);
+  font-size: 0.85rem;
+}
+
+.notas summary {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  list-style: none;
+  text-transform: lowercase;
+}
+
+.notas summary::-webkit-details-marker {
+  display: none;
+}
+
+.notas ol {
+  padding: 0.75rem 0.75rem 0.75rem 2rem;
+  border-top: 1px solid var(--color-linha);
+  list-style: decimal;
+  color: var(--color-texto);
+}
+
+.notas li + li {
+  margin-top: 0.4rem;
+}
+
+/* A ajuda das teclas.
+   FIXA, e não no fluxo: ela vive dentro do deck, depois de um slide que ocupa
+   a tela inteira, então no fluxo ela somava 68px e fazia a página rolar —
+   justo no modo que promete um slide por tela. Centralizada porque o rodapé
+   do slide já ocupa os dois cantos. Quem renderiza é o componente cliente,
+   só quando o JavaScript está de pé: sem ele, nenhuma dessas teclas existe. */
+.ajuda-deck {
+  position: fixed;
+  top: 4rem;
+  left: 50%;
+  z-index: 39;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-size: 0.75rem;
+  color: var(--color-apagado);
+  text-transform: lowercase;
+}
+
+html:fullscreen .ajuda-deck {
+  display: none;
+}
+
+/* No toque não há teclado: a ajuda só ocupava espaço, e na capa da AV1, que
+   fica no alto, ela quebrava em quatro linhas por cima da pílula. */
+@media (max-width: 639px) {
+  .ajuda-deck {
+    display: none;
+  }
+}
+
+/* Modo deck: um slide por vez, ocupando exatamente o que sobra abaixo do
+   cromo, para a página não rolar. As notas só aparecem com a tecla `n`, já
+   abertas. O slide da demonstração rola por dentro, para a memória de
+   cálculo inteira caber num projetor de 720 linhas. */
+[data-modo='deck'] .slide {
+  display: none;
+  min-height: calc(100dvh - 3.3rem);
+  border-color: transparent;
+  /* Guarda contra o número gigante do slide 3 e contra qualquer coisa que
+     passe da borda: no modo deck, o que não cabe é cortado, nunca vira
+     rolagem de página. */
+  overflow: hidden;
+}
+
+html:fullscreen [data-modo='deck'] .slide {
+  min-height: 100dvh;
+}
+
+[data-modo='deck'] .slide[data-ativo] {
+  display: flex;
+}
+
+[data-modo='deck']:not([data-notas]) .notas {
+  display: none;
+}
+
+[data-modo='deck'] .slide-demo .slide-titulo {
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
+}
+
+/* O slide da demonstração respira menos que os outros: cada pixel de padding
+   que ele devolve vira um pixel de tabela legível. */
+[data-modo='deck'] .slide-demo {
+  padding-top: 24px;
+  padding-bottom: 32px;
+}
+
+/* A DEMONSTRAÇÃO CABE INTEIRA, e isso não é preciosismo de layout.
+   A versão anterior limitava a altura e deixava rolar: em 1280x720 a caixa
+   tinha 384px para 1008px de conteúdo, então 62% ficava fora da tela,
+   incluindo a tabela e a linha "(104) ÷ (12 × 10) × 100 = 86.67". O slide se
+   chama "a nota com a conta aberta" e a conta era justamente o que não
+   aparecia. Pior: rolar exigia focar algo dentro da caixa, e focar desligava
+   as setas.
+
+   A folha de impressão já resolvia isso do jeito certo — esconder o que a
+   fala cobre e reduzir a escala. Aqui é a mesma receita.
+
+   A PRIMEIRA TENTATIVA ENCOLHEU DEMAIS. Reduzir a memória inteira a 60% fez
+   ela caber e ficar ilegível: a três metros de um projetor, a tabela some.
+   Ilegível é pior que cortado, porque o slide se chama "a nota com a conta
+   aberta" e ninguém lê a conta.
+
+   A correção é mostrar MENOS, e não menor: a variante `compacta` de
+   `MemoriaDeCalculo` tira a lista de subindicadores dentro de cada linha e a
+   coluna da faixa, que é o que fazia a tabela medir ~900px. Sobra a cadeia
+   inteira do argumento em corpo de leitura, e o zoom só faz o ajuste fino que
+   a resolução do dia pedir.
+
+   `zoom` e não `transform: scale` de propósito: zoom participa do layout, e a
+   caixa realmente encolhe. Com `scale` o elemento continuaria ocupando a
+   altura original e empurraria o rodapé do slide para fora. */
+[data-modo='deck'] .slide-demo .slide-apoio,
+[data-modo='deck'] .slide-demo .como-ler,
+[data-modo='deck'] .slide-demo .demo summary {
+  display: none;
+}
+
+/* A ESCALA SEGUE A ALTURA DA TELA, e não um número único.
+   Uma escala fixa serve a uma resolução e falha nas outras: a que fazia a
+   conta caber num notebook de 720 linhas deixava a mesma conta minúscula num
+   monitor de 1080. Medindo no navegador o maior zoom que cabe sem rolagem:
+   0,85 em 720, 0,95 em 768, 1,15 em 900 e 1,3 em 1080. Os degraus abaixo ficam
+   um passo abaixo do medido, de margem. */
+[data-modo='deck'] .slide-demo {
+  --zoom-demo: 0.82;
+}
+
+@media (min-height: 750px) {
+  [data-modo='deck'] .slide-demo {
+    --zoom-demo: 0.9;
+  }
+}
+
+@media (min-height: 820px) {
+  [data-modo='deck'] .slide-demo {
+    --zoom-demo: 1.05;
+  }
+}
+
+@media (min-height: 950px) {
+  [data-modo='deck'] .slide-demo {
+    --zoom-demo: 1.2;
+  }
+}
+
+[data-modo='deck'] .slide-demo .demo {
+  zoom: var(--zoom-demo);
+  /* Rede, não muleta: com o zoom valendo, a conta cabe e nada rola — e há
+     teste de ponta a ponta provando isso em 1280x720 e em 1366x768. A rede
+     existe para o navegador que ignora `zoom` (Firefox anterior ao 126) e
+     para o dia em que a memória ganhar uma linha: melhor rolar dentro da
+     caixa do que empurrar o rodapé do slide para fora da tela. */
+  overflow: auto;
+}
+
+/* Em tela cheia o cromo devolve 53px, que é quase um degrau inteiro. */
+html:fullscreen [data-modo='deck'] .slide-demo .demo {
+  zoom: calc(var(--zoom-demo) * 1.08);
+}
+
+/* NO SR1 A CONTA É PELA REGRA V3, e ela é mais alta: a linha da conta final
+   descreve o método de notas e quebra em duas, e junho tem os cinco
+   indicadores. A mesma receita, um degrau abaixo. */
+[data-modo='deck'] .slide-sr1.slide-demo .demo {
+  zoom: calc(var(--zoom-demo) * 0.9);
+}
+
+html:fullscreen [data-modo='deck'] .slide-sr1.slide-demo .demo {
+  zoom: calc(var(--zoom-demo) * 0.97);
+}
+
+/* Embaixo, no centro: o rodapé do slide já ocupa os dois cantos. */
+.deck-controles {
+  position: fixed;
+  bottom: 0.9rem;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--color-linha);
+  background: color-mix(in srgb, var(--color-fundo) 88%, transparent);
+  font-size: 0.8rem;
+  color: var(--color-apagado);
+}
+
+.deck-controles button {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--color-linha);
+  color: var(--color-texto);
+}
+
+.deck-controles button:hover {
+  border-color: var(--color-acento);
+  color: var(--color-acento);
+}
+
+.deck-controles button:disabled {
+  opacity: 0.35;
+}
+
+.deck-controles button[aria-pressed='true'] {
+  border-color: var(--color-acento);
+  background: var(--color-acento);
+  color: var(--color-ink);
+}
+
+html:fullscreen .cromo,
+html:fullscreen .ajuda-deck {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   O DECK EM MOVIMENTO
+
+   Cinco animações, e nenhuma decorativa: cada uma conta uma parte da história
+   que a fala está contando ao mesmo tempo.
+
+   Todas terminam no estado final (`forwards`) e nenhuma mexe em layout: só
+   opacidade e transformação. Isso importa por três razões. A página não pode
+   crescer, senão o slide volta a rolar; o teste de ponta a ponta mede isso.
+   A impressão precisa sair no estado final, e é o que acontece quando o
+   bloco de `@media print` desliga tudo. E quem pediu menos movimento no
+   sistema operacional recebe a tela pronta, sem nada piscando.
+--------------------------------------------------------------------------- */
+
+/* 1. O slide ativo entra, e o conteúdo dele entra em cascata. A ordem é a da
+      leitura: título, frase, e depois o visual, um cartão por vez. */
+[data-modo='deck'] .slide[data-ativo] .slide-corpo > * {
+  animation: subir 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+[data-modo='deck'] .slide[data-ativo] .slide-corpo > *:nth-child(2) {
+  animation-delay: 70ms;
+}
+
+[data-modo='deck'] .slide[data-ativo] .slide-corpo > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+
+[data-modo='deck'] .slide[data-ativo] .slide-corpo > *:nth-child(n + 4) {
+  animation-delay: 200ms;
+}
+
+/* Dentro de uma grade, cada item entra depois do anterior. Cinco no máximo:
+   é quantos cartões o slide mais cheio tem. */
+[data-modo='deck'] .slide[data-ativo] .cascata > * {
+  animation: subir 380ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+[data-modo='deck'] .slide[data-ativo] .cascata > *:nth-child(1) {
+  animation-delay: 180ms;
+}
+[data-modo='deck'] .slide[data-ativo] .cascata > *:nth-child(2) {
+  animation-delay: 260ms;
+}
+[data-modo='deck'] .slide[data-ativo] .cascata > *:nth-child(3) {
+  animation-delay: 340ms;
+}
+[data-modo='deck'] .slide[data-ativo] .cascata > *:nth-child(4) {
+  animation-delay: 420ms;
+}
+[data-modo='deck'] .slide[data-ativo] .cascata > *:nth-child(5) {
+  animation-delay: 500ms;
+}
+
+@keyframes subir {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 2. O número grande cai no lugar, como um contador mecânico parando. O
+      dígito é texto de verdade o tempo todo: animar o VALOR daria a chance
+      de a tela mostrar um número que não é o do repositório. */
+[data-modo='deck'] .slide[data-ativo] .odometro {
+  animation: cair 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 320ms;
+}
+
+@keyframes cair {
+  from {
+    opacity: 0;
+    transform: translateY(-0.18em) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 3. Uma hairline se desenha sob cada número, da esquerda para a direita. */
+[data-modo='deck'] .slide[data-ativo] .risco-anima {
+  animation: risco 520ms ease-out both;
+  animation-delay: 460ms;
+}
+
+@keyframes risco {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* 4. O SLIDE DO PROBLEMA: um ponto percorre o caminho do dinheiro e TRAVA na
+      etapa da planilha, batendo ali para sempre. É a única animação que se
+      repete, porque ela é o argumento: o processo não sai do lugar. */
+.viajante {
+  position: absolute;
+  top: -5px;
+  left: 10%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 999px;
+  background: var(--color-acento);
+}
+
+[data-modo='deck'] .slide[data-ativo] .viajante {
+  animation: viajar 4.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  animation-delay: 700ms;
+}
+
+@keyframes viajar {
+  0% {
+    left: 10%;
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  22% {
+    left: 30%;
+  }
+  40% {
+    left: 50%;
+    transform: scale(1);
+  }
+  /* Daqui em diante ele não avança mais: só bate. */
+  52%,
+  68%,
+  84% {
+    left: 50%;
+    transform: scale(1.45);
+  }
+  60%,
+  76%,
+  92% {
+    left: 50%;
+    transform: scale(1);
+  }
+  100% {
+    left: 50%;
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* 5. O número que as três pessoas veem, gigante, atrás dos cartões. É o mesmo
+      valor que a demonstração calcula no slide seguinte, lido do motor: a
+      plateia encontra o número de novo, e aí ele se explica. */
+.fantasma {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: -1;
+  transform: translateY(-42%);
+  font-family: var(--font-display);
+  font-size: clamp(9rem, 26vw, 22rem);
+  line-height: 0.8;
+  font-weight: 600;
+  color: var(--color-linha);
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-modo='deck'] .slide[data-ativo] .fantasma {
+  animation: fantasma 900ms ease-out both;
+  animation-delay: 120ms;
+}
+
+@keyframes fantasma {
+  from {
+    opacity: 0;
+    transform: translateY(-42%) scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-42%) scale(1);
+  }
+}
+
+/* A faixa do Recife, no pé da capa e do fechamento.
+   Presa ao rodapé do slide, atrás do conteúdo, e larga o bastante para o
+   desenho respirar. No celular ela encolhe junto, e some abaixo de 640px:
+   ali o slide já é uma coluna apertada e a paisagem viraria rabisco. */
+.horizonte {
+  position: absolute;
+  right: 0;
+  bottom: 4.2rem;
+  left: 0;
+  z-index: -1;
+  display: none;
+  /* Largura cheia e altura pela proporção do desenho: com altura fixa o SVG
+     encolhia para caber e a paisagem virava uma miniatura no meio da tela. */
+  width: 100%;
+  height: auto;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+@media (min-width: 640px) {
+  .horizonte {
+    display: block;
+  }
+}
+
+[data-modo='deck'] .slide[data-ativo] .horizonte {
+  animation: subir 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 260ms;
+}
+
+/* A barra de progresso do deck: fina, neutra, no topo absoluto da tela. O
+   acento já está gasto nos slides, e posição não precisa de cor. */
+.progresso-deck {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  height: 2px;
+  width: 100%;
+  transform-origin: left;
+  transform: scaleX(var(--progresso, 0));
+  background: var(--color-linha-alta);
+  transition: transform 320ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* No papel: uma página por slide, 16:9, sem cromo e sem notas. É daqui que
+   sai docs/pitch-kickoff.pdf, por `npm run pitch-pdf`. */
+@media print {
+  @page {
+    size: 13.333in 7.5in;
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: var(--color-fundo) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* O grão é um filtro SVG de ruído; no PDF ele vira um bitmap de 300 ppi
+     por página e o arquivo passa de 50 MB. O gradiente fica; o ruído sai. */
+  .grao::after {
+    display: none;
+  }
+
+  .slide {
+    display: flex !important;
+    height: 7.5in;
+    min-height: 0;
+    overflow: hidden;
+    border: 0;
+    padding: 0.55in 0.7in 0.7in;
+    break-after: page;
+    break-inside: avoid;
+  }
+
+  .slide:last-of-type {
+    break-after: auto;
+  }
+
+  .slide-rodape {
+    right: 0.7in;
+    bottom: 0.32in;
+    left: 0.7in;
+  }
+
+  /* O slide da demonstração: a memória compacta numa página, sem a caixa de
+     rolagem do modo deck e sem o parágrafo "como ler", que a fala cobre. A
+     página impressa é 16:9 em paisagem, então a conta é a mesma do deck. */
+  .slide-demo .slide-titulo {
+    font-size: 1.6rem;
+  }
+
+  .slide-demo .slide-apoio {
+    display: none;
+  }
+
+  .slide-demo .demo {
+    max-height: none !important;
+    overflow: visible !important;
+    zoom: 0.92;
+  }
+
+  /* O seletor do deck vem junto: o PDF é impresso com o deck ligado, e a
+     regra da tela, mais específica, venceria a do papel. */
+  .slide-sr1.slide-demo .demo,
+  [data-modo='deck'] .slide-sr1.slide-demo .demo {
+    zoom: 0.86;
+  }
+
+  .slide-demo .como-ler,
+  .slide-demo .demo summary {
+    display: none;
+  }
+
+  .cromo,
+  .deck-controles,
+  .notas,
+  .ajuda-deck,
+  .viajante,
+  .progresso-deck {
+    display: none !important;
+  }
+
+  /* O papel é o estado final: nenhuma animação, nenhum atraso. Sem isto, a
+     página sai congelada no primeiro quadro, com metade do slide invisível.
+
+     MENOS O QUE MORA DENTRO DE UM SVG. Ali `transform` não é animação: é o
+     atributo que põe cada peça no lugar, e a propriedade CSS vence o
+     atributo. Zerada, a faixa do Recife saía no PDF sem os cactos, sem os
+     pássaros e sem os raios do sol, todos empilhados na origem do desenho,
+     e o PDF do Kick-off saiu assim. O próprio <svg> continua zerado. */
+  .slide :not(svg *),
+  .slide :not(svg *)::before,
+  .slide :not(svg *)::after {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Menos o número gigante, cuja posição É uma transformação: zerada, ele cai
+     para fora da página e some justamente do arquivo que vira reserva. */
+  .slide .fantasma {
+    transform: translateY(-42%) !important;
+  }
+
+  /* E menos a faixa do Recife, que no papel também é a assinatura da capa. */
+  .horizonte {
+    display: block !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   A AV1 DE MACHINE LEARNING (/ml)
+
+   O mesmo deck do Kick-off, com duas diferenças que o conteúdo pede. A
+   primeira: os slides carregam gráfico, então o título e a frase de apoio
+   cedem um degrau para o visual caber em 1280x720 sem cortar. A segunda: os
+   gráficos são HTML pintado com tokens (src/components/ml/graficos.tsx), e
+   cada cor daqui é uma mistura do texto com transparente ou o próprio acento.
+   Nenhum hexadecimal: no claro, tudo acompanha sozinho (regra 10 da casa).
+
+   Nenhuma posição usa `transform`: a folha de impressão acima zera toda
+   transformação dentro de `.slide`, e o ponto sairia fora do lugar no PDF.
+--------------------------------------------------------------------------- */
+
+.slide-ml .slide-titulo {
+  max-width: 40ch;
+  font-size: clamp(1.45rem, 2.9vw, 2.2rem);
+}
+
+.slide-ml .slide-apoio {
+  max-width: 72ch;
+  margin-top: 0.55rem;
+  font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+  line-height: 1.5;
+  /* Sem palavra sozinha na última linha: "máquina", "linha dos 90%". */
+  text-wrap: balance;
+}
+
+[data-modo='deck'] .slide-ml {
+  padding-top: 32px;
+  padding-bottom: 60px;
+}
+
+/* CENTRALIZADO, COMO NO KICK-OFF, E É DECISÃO. A revisão sugeriu o título no
+   alto de todo slide, para ele não mudar de altura a cada troca. Testado, o
+   PDF saiu com metade de várias páginas vazia embaixo, e o slide com pouco
+   conteúdo parecia inacabado. A altura do título varia; a página cheia vale
+   mais. */
+
+/* O DECK CRESCE COM A TELA. Tudo aqui é medido em rem, então num projetor de
+   1080 linhas o slide virava uma faixa estreita no meio, com rótulo de 12px.
+   `zoom` (e não `scale`) porque participa do layout: a caixa cresce de verdade
+   e nada vaza. O slide mais alto mede ~570px em 720; 1,4 vezes isso cabe nos
+   ~930px de uma tela de 1080. A capa fica de fora porque a faixa do Recife é
+   absoluta e cresceria para fora da tela; o PDF, porque é `screen`. */
+@media screen and (min-width: 1500px) and (min-height: 880px) {
+  [data-modo='deck'] .slide-ml:not(.capa-ml) .slide-corpo {
+    zoom: 1.2;
+  }
+}
+
+@media screen and (min-width: 1800px) and (min-height: 1000px) {
+  [data-modo='deck'] .slide-ml:not(.capa-ml) .slide-corpo {
+    zoom: 1.4;
+  }
+}
+
+/* Os ordinais 01 a 06 com a cor da hairline davam 1,8:1 e sumiam projetados.
+   No deck da AV1 eles são o número da etapa que os outros slides citam. */
+.slide-ml .ordinal {
+  color: var(--color-apagado);
+}
+
+/* ---------------------------------------------------------------------------
+   O DECK DO SR1, LEGÍVEL NUMA CHAMADA DE VÍDEO (ADR-047)
+
+   As orientações do SR1 pedem "fontes legíveis, cores contrastantes" e
+   slides numerados. A apresentação é por vídeo: a tela chega comprimida e
+   menor do que num projetor. Então o SR1 herda a escala compacta da AV1 (os
+   slides são mais densos, porque precisam ser autocontidos), os ordinais
+   ganham a cor legível, o rótulo e o rodapé crescem, e a posição atual/total
+   sai do cinza.
+--------------------------------------------------------------------------- */
+
+.slide-sr1 .slide-titulo {
+  max-width: 40ch;
+  font-size: clamp(1.45rem, 2.9vw, 2.2rem);
+  text-wrap: balance;
+}
+
+.slide-sr1 .slide-apoio {
+  max-width: 72ch;
+  margin-top: 0.55rem;
+  font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+[data-modo='deck'] .slide-sr1 {
+  padding-top: 32px;
+  padding-bottom: 60px;
+}
+
+.slide-sr1 .ordinal {
+  color: var(--color-apagado);
+}
+
+.slide-sr1:not(.slide-demo) .rotulo {
+  font-size: 0.8125rem;
+}
+
+.slide-sr1 .slide-rodape {
+  font-size: 0.875rem;
+}
+
+.slide-sr1 .rodape-posicao {
+  font-size: 1rem;
+  color: var(--color-texto);
+}
+
+/* A DENSIDADE DO SR1. `.bloco-raso` mora fora de camada, então vence os
+   utilitários de espaçamento e de cor de borda (é o caso que a ADR-033 deixou
+   de fora): `py-2` e `border-acento` escritos num bloco raso não têm efeito.
+   Os slides do SR1 são tabelas e listas densas, então a densidade e o
+   destaque vêm daqui, com o mesmo escopo e fora de camada de propósito, para
+   vencer a regra de base. Linha de tabela usa `linha-sr1`; célula de linha do
+   tempo, `celula-sr1`. */
+.slide-sr1 .bloco-raso {
+  padding: 14px 18px;
+}
+
+.slide-sr1 .bloco-raso.linha-sr1 {
+  padding: 7px 16px;
+}
+
+.slide-sr1 .bloco-raso.celula-sr1 {
+  padding: 10px 12px;
+}
+
+.slide-sr1 .bloco-raso.border-acento {
+  border-color: var(--color-acento);
+  z-index: 10;
+}
+
+/* A capa do SR1 tem uma linha a mais que a do Kick-off (a disciplina e o
+   curso), e o bloco centralizado descia até a paisagem do Recife: o cacto
+   cortava os nomes. O respiro embaixo, do tamanho da paisagem, sobe o bloco;
+   a frase de apoio cabe numa linha. */
+@media (min-width: 768px) {
+  .slide-sr1.grao {
+    padding-bottom: calc(64px + 10rem);
+  }
+
+  .slide-sr1.grao .slide-apoio {
+    max-width: 90ch;
+  }
+}
+
+/* O wireframe desenha com a hairline, que no escuro some numa tela
+   compartilhada. Aqui o traço usa o cinza de texto: é remapeamento de token
+   dentro da caixa, não cor nova, e acompanha os dois temas. As barras que
+   fazem papel de texto também usavam a hairline (1,28:1 no escuro) e sumiam
+   no PDF: ficam entre a hairline e o traço, mais fracas que ele. */
+.wireframe-sr1 {
+  --color-linha-alta: var(--color-apagado);
+  --color-linha: color-mix(in srgb, var(--color-apagado) 60%, var(--color-fundo));
+}
+
+/* Um acento só, além do rodapé: as pílulas de quem falta, no painel da SEAB
+   (o terceiro desenho). Os outros três desenham o destaque em cinza. */
+.wireframe-sr1:not(:nth-child(3)) {
+  --color-acento: var(--color-apagado);
+}
+
+@media screen and (min-width: 1500px) and (min-height: 880px) {
+  [data-modo='deck'] .slide-sr1:not(.grao):not(.slide-demo) .slide-corpo {
+    zoom: 1.2;
+  }
+}
+
+@media screen and (min-width: 1800px) and (min-height: 1000px) {
+  [data-modo='deck'] .slide-sr1:not(.grao):not(.slide-demo) .slide-corpo {
+    zoom: 1.4;
+  }
+}
+
+/* As respostas preparadas, dentro das notas: separadas da fala por uma
+   hairline, porque não entram no tempo. */
+.notas-perguntas {
+  padding: 0.75rem 0.75rem 0.75rem 2rem;
+  border-top: 1px solid var(--color-linha);
+  color: var(--color-apagado);
+}
+
+.notas-perguntas ul {
+  margin-top: 0.4rem;
+  list-style: disc;
+}
+
+.notas-perguntas li + li {
+  margin-top: 0.4rem;
+}
+
+/* A capa sobe: centralizada, a lista de nove nomes caía em cima da faixa do
+   Recife. No alto, o texto termina antes de o desenho começar. */
+.capa-ml {
+  justify-content: flex-start;
+}
+
+[data-modo='deck'] .capa-ml {
+  padding-top: 56px;
+}
+
+/* O cursor do wordmark desce abaixo da linha de base e encostava na frase. */
+.capa-ml .slide-apoio {
+  margin-top: 1.1rem;
+}
+
+.graf-barra {
+  background: color-mix(in srgb, var(--color-texto) 62%, transparent);
+}
+
+.graf-trilho {
+  background: color-mix(in srgb, var(--color-texto) 7%, transparent);
+}
+
+/* As linhas de referência a 50% do texto: com a hairline alta davam menos de
+   3:1, e a diagonal do slide 14, que é o argumento do slide, sumia no projetor. */
+.graf-zero,
+.graf-bigode {
+  background: color-mix(in srgb, var(--color-texto) 50%, transparent);
+}
+
+/* Caixa opaca: translúcida, o bigode atravessava o miolo dela. */
+.graf-caixa {
+  border: 1px solid color-mix(in srgb, var(--color-texto) 50%, transparent);
+  background: color-mix(in srgb, var(--color-texto) 16%, var(--color-fundo));
+}
+
+.graf-mediana {
+  background: var(--color-texto);
+}
+
+.graf-ponto {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: 0 0 -3px -3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-texto) 48%, transparent);
+}
+
+/* Nas caixas a altura vem de `top: 50%`, e não de `bottom`. */
+.graf-ponto-meio {
+  margin: -3px 0 0 -3px;
+}
+
+.graf-ponto-acento {
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  margin: 0 0 -5.5px -5.5px;
+  background: var(--color-acento);
+  box-shadow: 0 0 0 2px var(--color-fundo);
+}
+
+.graf-corte {
+  border-left: 1px dashed var(--color-acento);
+}
+
+.graf-eixo,
+.graf-quadro {
+  border-color: color-mix(in srgb, var(--color-texto) 50%, transparent);
+}
+
+.graf-diagonal {
+  stroke: color-mix(in srgb, var(--color-texto) 55%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.graf-celula {
+  border: 1px solid var(--color-fundo);
+}
+
+.graf-celula-acento {
+  outline: 2px solid var(--color-acento);
+  outline-offset: -2px;
+}
+
+/* A planilha inteira em grade. 52 por 49 quadros, e não 260 por 244: célula
+   de um pixel e meio vira cinza liso no projetor. */
+.graf-ausentes {
+  border-color: var(--color-linha-alta);
+  background-color: color-mix(in srgb, var(--color-texto) 5%, transparent);
+  background-image:
+    linear-gradient(to right, var(--color-linha) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-linha) 1px, transparent 1px);
+  background-size:
+    calc(100% / 52) 100%,
+    100% calc(100% / 49);
+}

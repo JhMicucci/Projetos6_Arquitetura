@@ -1,0 +1,205 @@
+# Prumo — regras da casa
+
+Contexto para qualquer pessoa (ou agente) que for mexer neste repositório.
+
+## O que é
+
+Site do Projeto 6 da CESAR School (2026.2, Equipe 2). Duas camadas:
+
+- **`/`** — a página. As oito seções que o briefing do Kick-off exige, na numeração dele:
+  início, equipe, desafio e problema, usuário, solução, processo, cronograma e documentos.
+  O diário de bordo semanal vive dentro dela, cada semana numa sanfona `<details>`. É o
+  artefato avaliado pelo professor e substitui o Google Site. `/registro` continua existindo
+  como redirecionamento para `/#registro`.
+- **`/pitch`** — os dezessete slides do Kick-off, fechados pelo ciclo `ko`.
+- **`/sr1`** — os vinte e dois slides do SR1, na ordem da rubrica oficial (ADR-047), fechados
+  pelo ciclo `sr1`. `/ml` é a AV1 de machine learning, sem portão.
+- **`/sistema`** — MVP do cálculo da gratificação por desempenho da SESAU Recife.
+
+## Regras que não se negociam
+
+1. **Dado de pessoa nunca entra. Dado institucional da SESAU entra só com autorização
+   registrada.** CPF, nome, matrícula, e-mail e telefone estão proibidos no repositório, no
+   seed e em prompt de IA, sem exceção: isso não é permissão que o cliente possa dar, é o
+   art. 20 da LGPD. Já a base de desempenho por unidade, que é dado institucional e não
+   identifica ninguém, vive em `ml/data/` com autorização da Secretaria (ADR-044). O seed de
+   `src/lib/seed/` continua **100% sintético**, e a autorização não se estende a ele.
+   Dois testes seguram a fronteira: um varre a base sintética, outro varre `ml/data/` inteiro,
+   linha a linha, atrás de CPF, e-mail, telefone formatado e coluna que identifique pessoa.
+2. **Datas só mudam em `src/lib/cronograma.ts`.** É a fonte única de verdade; header,
+   releases, registro e checklist derivam dela.
+3. **Arquivos de `src/content/ciclos/` nunca contêm `'use client'`.** Um componente cliente
+   ali geraria chunk próprio em `.next/static`, e conteúdo de release futuro vazaria. Se
+   precisar de interatividade, use um componente compartilhado de `src/components/`.
+4. **Conteúdo vive no Git, não em formulário.** O painel administrativo decide *quando* o
+   que já existe fica visível; ele não edita texto.
+5. **Documento de entrega é TSX, nunca PDF.** SWOT, personas, mapa de empatia, backlog —
+   tudo entra em `documentos` no arquivo do ciclo e é renderizado dentro da página. Quem
+   avalia clica no título e lê ali; não baixa arquivo, não troca de aba, não depende de link
+   que expira. Evidência que aponta para documento usa a âncora `#doc-<ciclo>-<id>`, e há
+   teste que falha se a âncora não tiver destino.
+6. **Data nunca é `Date`.** Sempre `YYYY-MM-DD` em string, comparada lexicograficamente. O
+   "hoje" é injetado nas funções de regra, nunca lido dentro delas.
+7. **Motor de cálculo é função pura.** Sem I/O, sem relógio, sem aleatoriedade.
+8. **Nada de travessão na copy.** Em texto que aparece na tela, use dois-pontos quando for
+   rótulo e explicação (`semana 5: arquitetura`) e vírgula ou ponto quando for prosa. Em
+   comentário de código o travessão continua livre: comentário não é copy.
+9. **Tela do sistema passa por dois portões, nessa ordem.** Release (`exigirFeature`) e
+   perfil (`exigirPerfil`), sempre antes de montar o componente. Sanfona fechada não esconde
+   nada do HTML, então a ordem é a proteção. Quem não tem direito recebe 404, nunca 403: da
+   porta, "ainda não liberado" e "não é seu" precisam ser indistinguíveis. Há teste que
+   percorre as 8 telas contra os 4 perfis.
+10. **Dois temas, um desenho.** Escuro e claro mudam onze tokens de cor e mais nada: nenhum
+   layout, nenhuma classe condicional de tema em componente. Cor nova entra nos DOIS blocos
+   de `globals.css`, e há teste que falha se o claro esquecer um token. Cor literal em CSS
+   (um `#hex` fora do `@theme`) é sempre um bug: ela não acompanha o tema.
+11. **Um acento só.** `--color-acento` é o laranja da CESAR e aparece em no máximo três
+   lugares por tela: número grande, chamada sólida e pílula/ícone do fluxo. Se precisar de
+   mais uma cor para diferenciar alguma coisa, use hairline e caixa alta, não cor.
+
+## A identidade em uma linha (melhor: em duas)
+
+**O site** é folha de especificação, no escuro por padrão e no papel a um clique: tudo monoespaçado e minúsculo, blocos delimitados por
+hairline de 1px que se encostam como tabela (`.bloco`, com `margin-top: -1px`), raio zero
+exceto em pílulas, e o gradiente granulado como única imagem do site. Caixa alta só em rótulo
+de estado ou etapa. Os detalhes e os contrastes conferidos estão na ADR-016.
+
+**O /sistema** tem pele própria (ADR-031), ligada por `data-pele="sistema"` no layout: sans
+do aparelho em caixa natural, fundo neutro, cartões arredondados com sombra sutil,
+botões-pílula e ícone nos painéis. É remapeamento de token, não segundo design system: os
+valores `--color-sis-*` moram nos DOIS blocos de tema e passam pelo mesmo teste de
+contraste. As regras 10 e 11 valem igual nas duas peles.
+
+## Idioma
+
+Interface, documentação e commits em **português**. Os identificadores de código também são
+em português — o briefing do projeto nomeia arquivos e funções assim (`cronograma.ts`,
+`calcularAvaliacao`, `RegistroSemana`, `configuracao_site`), e misturar dois idiomas seria
+pior que escolher um. Mantenha a consistência.
+
+## Estrutura
+
+```
+src/
+├── app/                 rotas (App Router)
+├── components/
+│   ├── base/            botão, selo, marca, rodapé, cabeçalho, fluxo, faixa do admin
+│   ├── pitch/           o deck do Kick-off: slides no servidor, teclado no cliente
+│   ├── ml/              os slides da AV1 de machine learning e os gráficos em HTML
+│   ├── sr1/             os slides do SR1, no mesmo deck do Kick-off
+│   ├── registro/        topo, trilhas, cartão da semana, entrega da vez,
+│   │                    biblioteca de documentos e cronograma público
+│   ├── sistema/         primitivos, ícones, sanfona da tela, tutorial, perfis
+│   │   └── telas/       o corpo das 8 telas, sem gate por dentro (ADR-023)
+│   ├── conteudo.tsx     primitivos usados pelo conteúdo dos ciclos
+│   └── wireframe.tsx    os quatro wireframes de baixa fidelidade, em SVG sem texto
+├── fontes/              os .woff2 versionados (ADR-028): build sem rede
+├── content/
+│   ├── ciclos/          um arquivo por ciclo + registry server-only
+│   ├── analises.ts      CSD, benchmarking, SWOT, ideação e mapa de empatia, como dado
+│   ├── equipe.ts        a equipe, os papéis e em que ciclo cada um entrou
+│   ├── checklist.ts     status das evidências da matriz
+│   ├── travas.ts        travas de release versionadas: liberar um ciclo por commit
+│   ├── pitch.ts         fonte única do pitch: slides, tempos, quem fala, notas
+│   ├── apresentacao-ml.ts  o texto dos slides da AV1 de ML; os números vêm do JSON do caderno 07
+│   ├── apresentacao-sr1.ts o texto dos slides do SR1; as notas saem do motor, dos JSON e do cronograma
+│   ├── tutoriais.ts     o aprendizado guiado de cada perfil
+│   └── produto.ts       nome, problema, pergunta e objetivos do projeto
+└── lib/
+    ├── cronograma.ts    FONTE ÚNICA DE VERDADE das datas
+    ├── datas.ts         aritmética civil em America/Recife
+    ├── releases.ts      motor de releases (puro)
+    ├── visao.ts         resolve admin, data simulada e ciclos visíveis
+    ├── features.ts      tela → ciclo que a libera, e quais perfis a enxergam
+    ├── decks.ts         que apresentação o topo do site oferece hoje, e onde ela mora
+    ├── admin/           sessão, senha, rate limit, guard (do painel)
+    ├── auth/            login do /sistema: scrypt, sessão JWE (AES-256-GCM), contas (ADR-051/052)
+    ├── calculo/         motor da gratificação (puro) e tipos
+    ├── config/          config store com drivers
+    ├── dados/           repositório: driver PostgreSQL (o ligado) e seed; postgres/ tem
+    │                    migração, carga inicial e a tradução linha ↔ domínio
+    ├── seed/            base sintética com semente fixa
+    ├── supabase/        testes das políticas de RLS do schema guardado
+    ├── sistema/         identidade simulada, parâmetros da URL, escrita do protótipo
+    └── telemetria/      OpenTelemetry: o que entra no trace e o que nunca entra (regra 1).
+                         Liga só com OTEL_EXPORTER_OTLP_ENDPOINT; a fitness function de
+                         observabilidade prova o span do INSERT sem nenhum valor digitado
+
+db/
+└── migrations/          schema LIGADO ao app (domínio atual) e as quatro travas em gatilho
+
+supabase/
+├── migrations/          schema do domínio anterior, com RLS por perfil — guardado, NÃO ligado
+└── testes/              stubs para rodar as migrações num Postgres comum
+
+docker-compose.yml       banco e site no Docker: `docker compose up -d --build`, sem Node na máquina
+Dockerfile               a imagem do site; na subida, migra e (com banco vazio) semeia
+
+ml/                      lente de machine learning — treina offline, o app lê o JSON
+├── data/                a planilha de desempenho por unidade que os cadernos leem
+└── notebooks/           os cadernos, com todo o código; o 06 escreve
+                         src/content/ml/resultados.json e o 07, os números
+                         dos slides da AV1 (src/content/ml/apresentacao.json)
+
+infra/                   CI/CD na AWS (ADR-053): CodePipeline → EC2 com só 80 e 443
+├── terraform/           bootstrap do state, ambientes/producao e os oito módulos
+├── codebuild/           buildspecs e scripts das fitness functions; versões das ferramentas
+│                        fixadas com SHA-256 em ferramentas.sh
+└── codedeploy/          appspec, Caddyfile e os ganchos que rodam na EC2
+```
+
+Os scripts de `infra/codebuild/` e `infra/codedeploy/` rodam em Linux: o `.gitattributes`
+força LF neles, e um `.sh` com CRLF quebra o deploy.
+
+## Onde os dados vivem
+
+**No PostgreSQL** (ADR-050). `docker compose up -d --build` sobe banco e site juntos, sem Node
+na máquina. Para `npm run dev`: `docker compose up -d postgres && npm run db:preparar`, com a
+`DATABASE_URL` do `.env.example` no `.env.local`. As telas falam com
+`src/lib/dados/`, nunca com o banco nem com o seed direto, e o driver ligado é
+`driver-postgres.ts`. Sem `DATABASE_URL`, o `/sistema` avisa que falta banco em vez de cair nos
+dados em memória; `DADOS_DRIVER=seed` liga o modo antigo explicitamente.
+
+O schema ligado é `db/migrations/`. Mudou o schema? Migração NOVA, com o número seguinte:
+migração aplicada não se edita. As invariantes que não podem depender da aplicação (trilha
+append-only, ciclo que só avança, janela de lançamento, regra imutável) são gatilho, e a
+trilha de auditoria é escrita pelo banco. Em produção, as credenciais vêm do AWS Secrets
+Manager (`DATABASE_SECRET_ID`), nunca do código. Escrever exige login (ADR-051): senha é hash
+scrypt, nunca cifra; a sessão é um JWE (JWT cifrado com AES-256-GCM) em cookie `httpOnly` e
+`SameSite=Strict` (ADR-052). `supabase/migrations/` é o schema do domínio
+anterior, guardado como prova de RLS por perfil e desligado. Detalhes em `docs/banco.md`.
+
+## Comandos
+
+| Comando | Para quê |
+| --- | --- |
+| `npm run dev` | Desenvolvimento |
+| `npm test` | Vitest |
+| `npm run typecheck` | `tsc --noEmit` — quebra se um ciclo publicado estiver incompleto |
+| `npm run verificar-vazamento` | Prova que conteúdo futuro não vaza (exige `npm run build` antes) |
+| `npm run roteiro` | Regenera a seção slide a slide de `docs/pitch-kickoff.md`, `docs/ml-av1.md` e `docs/pitch-sr1.md` a partir do conteúdo dos decks |
+| `npm run pitch-pdf` | Gera `docs/pitch-kickoff.pdf` e as capturas de `docs/pitch/` a partir de `/pitch`; com `-- ml`, `docs/ml-av1.pdf` e `docs/ml-av1/` a partir de `/ml`; com `-- sr1`, `docs/sr1.pdf` e `docs/sr1/` a partir de `/sr1` (exige `npm run build` antes) |
+| `npm run e2e` | Playwright (exige `DATABASE_URL_E2E`, um banco que a suíte apaga e recarrega) |
+| `npm run db:preparar` | Aplica as migrações de `db/migrations/` e carrega a base sintética se o banco estiver vazio (`db:migrar` e `db:semear` separados; `db:semear -- --limpar` recomeça do zero) |
+| `npm run usuarios -- demo` | Cria uma conta por perfil, com senha aleatória mostrada uma vez (também `criar`, `senha`, `listar`, `desativar`). No Docker: `docker compose run --rm migrador usuarios.js demo` |
+| `npm run testar-banco` | Driver PostgreSQL e as quatro travas contra um Postgres real (exige `DATABASE_URL_TESTE`, que é apagado) |
+| `npm run testar-rls` | Políticas do schema guardado contra um Postgres real (exige `DATABASE_URL_TESTE`) |
+| `npm run semear` | Semeia a fotografia V1 no schema guardado de `supabase/migrations/` (exige `DATABASE_URL`) |
+| `npm run verificar` | typecheck + testes + build + verificação de vazamento |
+| `bash infra/codebuild/seguranca.sh` | As fitness functions de segurança do pipeline (Gitleaks, Trivy, Hadolint, Terraform), iguais às do CodeBuild; exige as ferramentas de `ferramentas.sh` |
+
+## Antes de abrir PR
+
+1. `npm run verificar` verde.
+2. Se mexeu em conteúdo de ciclo, confira o registro no navegador como **visitante**, não
+   como admin.
+3. Se usou IA, adicione a linha correspondente em `docs/uso-de-ia.md` — inclusive quem
+   validou.
+
+## Onde ler mais
+
+`docs/releases.md` explica como operar o que o professor vê. `docs/decisoes.md` guarda os
+porquês. `docs/pipeline.md` cobre o pipeline da AWS: fitness functions, módulos, portas e
+operação. `docs/seguranca.md`, `docs/nuvem.md` e `docs/privacidade.md` cobrem as três lentes técnicas
+exigidas pela matriz (Segurança da Informação, Arquitetura Nativa na Nuvem e Aprendizado de
+Máquina, esta última em `ml/`), mais a de Direito que a equipe acrescentou.

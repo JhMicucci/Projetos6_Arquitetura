@@ -1,0 +1,399 @@
+import { expect, test } from '@playwright/test'
+import { CRONOGRAMA } from '@/lib/cronograma'
+import { hojeEmRecife } from '@/lib/datas'
+import {
+  CICLO_DA_SEMANA,
+  CICLO_OCULTO,
+  CICLO_PUBLICO,
+  CICLOS_PUBLICOS,
+  DECK_EM_DESTAQUE,
+  marcador,
+} from './cronograma'
+import { DECKS_DOS_MARCOS } from '@/lib/decks'
+
+test.describe('página inicial', () => {
+  test('a chamada e o hero cabem acima da dobra', async ({ page }) => {
+    await page.goto('/')
+
+    // A página rola de propósito, mas a primeira tela precisa dizer o que é.
+    await expect(page.getByRole('heading', { level: 1 })).toBeInViewport()
+    await expect(page.getByRole('link', { name: /ver o sistema/ }).first()).toBeInViewport()
+  })
+
+  test('não estoura a largura da tela', async ({ page }) => {
+    await page.goto('/')
+    // Mono é bem mais largo que sans: a headline já estourou 360px uma vez.
+    const estoura = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    )
+    expect(estoura).toBe(false)
+  })
+
+  test('traz o site inteiro: equipe, marcos, registro e o caminho do sistema', async ({
+    page,
+  }) => {
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: 'Equipe' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Evolução do projeto' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Registro semanal' })).toBeVisible()
+
+    // A equipe inteira, com nome. A lista cresce quando alguém entra.
+    for (const nome of [
+      'Gabriel',
+      'Matheus',
+      'João Henrique',
+      'João Pedro',
+      'Rafael',
+      'Kerry',
+      'Fernando',
+    ]) {
+      await expect(page.getByText(nome, { exact: false }).first()).toBeVisible()
+    }
+
+    await page
+      .getByRole('link', { name: /ver o sistema/ })
+      .first()
+      .click()
+    await expect(page).toHaveURL(/\/sistema$/)
+  })
+
+  test('/registro continua funcionando e cai na seção', async ({ page }) => {
+    // A rota virou redirecionamento: link já compartilhado não pode quebrar.
+    await page.goto('/registro')
+    await expect(page).toHaveURL(/\/#registro$/)
+    await expect(page.getByRole('heading', { name: 'Registro semanal' })).toBeVisible()
+  })
+
+  test('tem foco de teclado visível no primeiro elemento navegável', async ({ page }) => {
+    await page.goto('/')
+    await page.keyboard.press('Tab')
+    const temFoco = await page.evaluate(() => document.activeElement?.tagName !== 'BODY')
+    expect(temFoco).toBe(true)
+  })
+})
+
+test.describe('registro do projeto', () => {
+  test('cumpre os blocos exigidos pela diretriz', async ({ page }) => {
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: 'Registro semanal' })).toBeVisible()
+
+    // As semanas chegam recolhidas: abrir uma é o que expõe os oito blocos.
+    await page.locator('details[data-ciclo]').first().getByRole('heading').click()
+
+    for (const bloco of [
+      'Objetivo da semana',
+      'Avanços',
+      'Decisões',
+      'Bloqueios',
+      'Feedback recebido',
+      'Próximos passos',
+      'Responsáveis',
+      'Evidências',
+    ]) {
+      await expect(
+        page.getByRole('heading', { name: bloco, exact: true }).first(),
+      ).toBeVisible()
+    }
+  })
+
+  test('mostra a equipe, a pergunta do projeto e a trilha de marcos', async ({ page }) => {
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: 'Equipe' })).toBeVisible()
+    await expect(
+      page.getByText(/confiável, transparente, sustentável e auditável/),
+    ).toBeVisible()
+    const trilha = page.getByRole('region', { name: 'Evolução do projeto' })
+    await expect(page.getByRole('heading', { name: 'Evolução do projeto' })).toBeVisible()
+
+    // DENTRO DA TRILHA, e não na página inteira. O nome de um marco aparece
+    // hoje em vários lugares legítimos (o quadro do cronograma, a coluna
+    // "verificável em" dos objetivos), e alguns deles dentro de sanfona
+    // fechada. Sem escopo, o `.first()` pegava um `<td>` escondido.
+    for (const marco of ['Kick-off', 'SR1', 'SR2: Final']) {
+      await expect(trilha.getByText(marco, { exact: true }).first()).toBeVisible()
+    }
+  })
+
+  test('a entrega da vez tem nome, data e caminho para a apresentação', async ({ page }) => {
+    // O defeito que originou este teste: o site tinha o Kick-off inteiro
+    // publicado e a palavra "Kick-off" não aparecia em navegação nenhuma. O
+    // índice lista as oito seções do briefing, e nenhuma é a apresentação.
+    await page.goto('/')
+
+    const entrega = page.locator('#entrega')
+    await expect(entrega).toBeVisible()
+    await expect(entrega.getByRole('heading', { name: 'a entrega da vez' })).toBeVisible()
+
+    // O nome do marco vem do cronograma, não de um literal.
+    const marco = CRONOGRAMA.find((c) => c.tipo === 'marco' && c.data >= hojeEmRecife())
+    expect(marco, 'nenhum marco à frente no cronograma').toBeTruthy()
+    await expect(entrega.getByText(marco!.rotulo, { exact: false }).first()).toBeVisible()
+
+    if (DECK_EM_DESTAQUE) {
+      await expect(entrega.getByRole('link', { name: /ver a apresentação/ })).toHaveAttribute(
+        'href',
+        DECK_EM_DESTAQUE.rota,
+      )
+      // E a palavra que o professor usa está no topo de toda página.
+      await expect(
+        page.locator('header').getByRole('link', { name: DECK_EM_DESTAQUE.rotulo, exact: true }),
+      ).toBeVisible()
+    }
+    if (CICLOS_PUBLICOS.includes('ko')) {
+      // A rota curta não quebra: quem digita /kickoff cai nos slides.
+      await page.goto('/kickoff')
+      await expect(page).toHaveURL(/\/pitch$/)
+    }
+  })
+
+  test('o topo de TODA página oferece a apresentação enquanto ela é a entrega da vez', async ({
+    page,
+  }) => {
+    // Não só a inicial: a primeira versão do atalho ficou lá, e quem abrisse o
+    // sistema ou a arquitetura não tinha caminho nenhum até os slides.
+    // O rótulo é "kick-off" ou "sr1", e não "pitch": pitch é o nome interno
+    // da equipe, e quem avalia procura pela palavra que o professor usa.
+    for (const rota of ['/', '/sistema', '/arquitetura', '/transparencia-ia', '/status']) {
+      await page.goto(rota)
+      const cabecalho = page.locator('header').first()
+
+      for (const deck of DECKS_DOS_MARCOS) {
+        const link = cabecalho.getByRole('link', { name: deck.rotulo, exact: true })
+        if (DECK_EM_DESTAQUE?.ciclo === deck.ciclo) {
+          await expect(link, rota).toBeVisible()
+          await expect(link, rota).toHaveAttribute('href', deck.rota)
+        } else {
+          // Fora da janela o botão some sozinho: destaque sem prazo vira
+          // entulho, e antes do release ele apontaria para um 404.
+          await expect(link, rota).toHaveCount(0)
+        }
+      }
+    }
+  })
+
+  test('todas as semanas chegam recolhidas, e a setinha abre uma', async ({ page }) => {
+    await page.goto('/')
+
+    const semanas = page.locator('details[data-ciclo]')
+    const quantas = await semanas.count()
+    expect(quantas).toBeGreaterThan(1)
+
+    // Nenhuma aberta: o professor procura UMA linha, não rola um muro de texto.
+    for (let i = 0; i < quantas; i++) {
+      await expect(semanas.nth(i)).not.toHaveAttribute('open', '')
+    }
+
+    // E a da vez vem marcada, para ele achar sem ler data por data.
+    //
+    // `exact` NÃO é detalhe: sem ele o texto casa por substring, e o corpo das
+    // semanas diz "Nenhum bloqueio nesta semana" e "Registro desta semana...".
+    // Os dois contêm "esta semana", os dois vivem dentro de sanfona fechada, e
+    // era um deles que o `.first()` pegava — invisível, teste vermelho, pílula
+    // funcionando o tempo todo.
+    // A expectativa vem do cronograma, não de um palpite: nas semanas
+    // imprensadas o cartão da vez é o do imprensado, e depois que o semestre
+    // acaba não há nenhum. Fixar "sempre visível" deixava o teste vermelho de
+    // 05/09 a 11/09 sem ninguém ter tocado no código.
+    const pilula = page.getByText('esta semana', { exact: true })
+    if (CICLO_DA_SEMANA) {
+      // No cartão certo, e em um só: duas semanas correntes seria pior que
+      // nenhuma.
+      // `exact` aqui também: o texto do cartão diz "nesta semana" mais de uma
+      // vez, e sem ele a busca casa por substring e resolve para vários nós.
+      await expect(
+        page.locator(`[data-ciclo="${CICLO_DA_SEMANA}"]`).getByText('esta semana', { exact: true }),
+      ).toBeVisible()
+      await expect(pilula).toHaveCount(1)
+    } else {
+      await expect(pilula).toHaveCount(0)
+    }
+
+    // A setinha abre as entregas daquela semana — sem JavaScript nosso.
+    const escolhida = semanas.first()
+    await escolhida.getByRole('heading').click()
+    await expect(escolhida).toHaveAttribute('open', '')
+    await expect(escolhida.getByRole('heading', { name: 'Objetivo da semana' })).toBeVisible()
+  })
+
+  test('os documentos abrem dentro da própria página', async ({ page }) => {
+    await page.goto('/')
+
+    // Semana 2 é a que tem personas, benchmarking e SWOT.
+    await page.locator('details[data-ciclo="s2"] > summary').click()
+
+    // A ÂNCORA MORA NO CORPO, não no `<details>`: o navegador só abre
+    // `<details>` que sejam ANCESTRAIS do alvo do fragmento, nunca o alvo em
+    // si. Enquanto o id ficou na sanfona, o link rolava até ela e a deixava
+    // fechada. O teste agora fala das duas peças separadas, de propósito.
+    const corpo = page.locator('#doc-s2-swot')
+    const sanfona = page.locator('details:has(> #doc-s2-swot)')
+
+    await expect(sanfona).toBeVisible()
+    await expect(sanfona).not.toHaveAttribute('open', '')
+    await expect(corpo).toBeHidden()
+
+    await sanfona.locator('summary').click()
+    await expect(sanfona).toHaveAttribute('open', '')
+    await expect(corpo).toBeVisible()
+
+    // O documento é conteúdo renderizado, não link para PDF nem aba nova.
+    for (const quadrante of ['Forças', 'Fraquezas', 'Oportunidades', 'Ameaças']) {
+      await expect(corpo.getByText(quadrante, { exact: true })).toBeVisible()
+    }
+  })
+
+  test('a âncora de um documento abre o documento, não só rola até ele', async ({ page }) => {
+    // A regressão que este teste guarda: com o id no próprio `<details>`, ir
+    // para `/#doc-s2-swot` rolava até a sanfona FECHADA. Quem clicava na
+    // biblioteca chegava numa tela que não mostrava nada, e o bloco de
+    // evidências parecia não levar a lugar nenhum.
+    await page.goto('/#doc-s2-swot')
+
+    await expect(page.locator('details[data-ciclo="s2"]')).toHaveAttribute('open', '')
+    await expect(page.locator('details:has(> #doc-s2-swot)')).toHaveAttribute('open', '')
+    await expect(page.locator('#doc-s2-swot').getByText('Forças', { exact: true })).toBeVisible()
+  })
+
+  test('nenhuma evidência manda o professor para fora ou para lugar nenhum', async ({
+    page,
+  }) => {
+    await page.goto('/')
+
+    const ancoras = page.locator('a[href^="#doc-"]')
+    const quantas = await ancoras.count()
+    expect(quantas).toBeGreaterThan(0)
+
+    // Toda âncora de documento precisa ter destino na página.
+    for (let i = 0; i < quantas; i++) {
+      const href = await ancoras.nth(i).getAttribute('href')
+      await expect(page.locator(href!), `âncora sem destino: ${href}`).toHaveCount(1)
+    }
+  })
+
+  test('não entrega conteúdo de ciclo ainda não liberado', async ({ page }) => {
+    await page.goto('/')
+    const html = await page.content()
+
+    // `<details>` fechado continua no DOM: por isso semana não liberada não pode
+    // sequer ser renderizada, dobrada ou não.
+    // Os ciclos saem do cronograma, não de um id escrito à mão: o release anda
+    // com o calendário, e o teste precisa andar junto (ver e2e/cronograma.ts).
+    expect(html).toContain(marcador(CICLO_PUBLICO))
+    expect(html).not.toContain(marcador(CICLO_OCULTO))
+  })
+
+  test('transparência no uso de IA está publicada', async ({ page }) => {
+    await page.goto('/')
+    // O registro tem dois caminhos para a página: o cartão de evidência da s1 e
+    // o link do rodapé. Aqui exercitamos o do rodapé.
+    await page.getByRole('link', { name: 'transparência no uso de ia', exact: true }).click()
+    await expect(page).toHaveURL(/\/transparencia-ia$/)
+    // A frase aparece no cabeçalho da página e de novo no documento renderizado.
+    await expect(page.getByText(/gerado ≠ entregue/).first()).toBeVisible()
+    await expect(page.getByRole('table').first()).toBeVisible()
+  })
+})
+
+test.describe('arquitetura em desenhos', () => {
+  test('a home tem a porta, e a página tem os quatro níveis do C4 e o prompt', async ({ page }) => {
+    await page.goto('/')
+    // A seção da home é a porta de entrada: clicou, apareceu. O escopo é a
+    // seção, porque "Arquitetura" também é título de documento de ciclo.
+    await expect(
+      page.locator('#arquitetura').getByRole('heading', { name: 'Arquitetura' }),
+    ).toBeVisible()
+    await page.getByRole('link', { name: /ver a arquitetura/ }).click()
+    await expect(page).toHaveURL(/\/arquitetura$/)
+
+    await expect(page.getByRole('heading', { name: 'Arquitetura' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'O sistema visto de fora' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'As peças da caixa' })).toBeVisible()
+    // Os quatro níveis do C4 moram aqui, e é o que a AV1 de Arquitetura cobra.
+    await expect(page.getByRole('heading', { name: 'Por dentro da aplicação' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'O motor por dentro' })).toBeVisible()
+    await expect(
+      page.getByRole('img', { name: 'Diagrama de componentes do App Router' }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole('img', { name: 'Diagrama de classes do domínio do cálculo' }),
+    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'O caminho de um número' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'O que o sistema guarda' })).toBeVisible()
+
+    // O banco guardado aparece no desenho, e aparece como desligado.
+    await expect(page.getByText('Schema PostgreSQL guardado')).toBeVisible()
+    await expect(
+      page.getByText('testado no CI contra um banco real; NÃO ligado ao aplicativo'),
+    ).toBeVisible()
+
+    // O diagrama de classes usa campos reais e diz com quem cada classe se liga.
+    await expect(page.getByText('Regra de pontuação', { exact: true })).toBeVisible()
+    await expect(page.getByText('Evento de auditoria', { exact: true })).toBeVisible()
+
+    // O prompt abre na própria página e é o prompt de verdade.
+    await page.getByText('abrir o prompt completo').click()
+    await expect(page.getByText(/arquiteto de software especialista no modelo C4/)).toBeVisible()
+  })
+
+  test('não estoura a largura da tela', async ({ page }) => {
+    await page.goto('/arquitetura')
+    const estoura = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    )
+    expect(estoura).toBe(false)
+  })
+})
+
+/**
+ * Modo claro (ADR-027).
+ *
+ * O que se mede aqui é o que a implementação por cookie promete e a por
+ * localStorage não entrega: o HTML já chega pintado do servidor, então não há
+ * quadro nenhum com o tema errado, e a escolha atravessa as páginas.
+ */
+test.describe('tema claro e escuro', () => {
+  test('o botão troca o tema, e a escolha sobrevive à navegação', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro')
+
+    await page.getByRole('button', { name: /modo claro/i }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'claro')
+
+    // Atravessa páginas: o cookie vale para o site inteiro, não só para a home.
+    await page.goto('/sistema')
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'claro')
+
+    await page.getByRole('button', { name: /modo escuro/i }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro')
+  })
+
+  test('o tema já vem pintado no HTML do servidor, sem piscada', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: /modo claro/i }).click()
+
+    // Busca o HTML cru, antes de qualquer JavaScript rodar: se o atributo só
+    // fosse aplicado no cliente, ele não estaria aqui e haveria piscada.
+    const cru = await (await page.request.get('/')).text()
+    expect(cru).toContain('data-tema="claro"')
+  })
+
+  test('o modo claro repinta de verdade, não só troca um atributo', async ({ page }) => {
+    await page.goto('/')
+    const escuro = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+
+    await page.getByRole('button', { name: /modo claro/i }).click()
+    // O clique é um POST com redirecionamento: espera o documento novo chegar
+    // antes de ler o estilo, senão a leitura corre contra a navegação.
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'claro')
+    const claro = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+
+    expect(claro).not.toBe(escuro)
+    // Papel é claro: a soma dos canais tem de subir muito.
+    const soma = (cor: string) =>
+      (cor.match(/\d+/g) ?? []).slice(0, 3).reduce((s, n) => s + Number(n), 0)
+    expect(soma(claro)).toBeGreaterThan(soma(escuro) + 300)
+  })
+})

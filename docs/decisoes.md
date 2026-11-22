@@ -1,0 +1,1657 @@
+# Decisões de arquitetura (ADRs)
+
+Cada decisão em cinco linhas: contexto, decisão, consequência.
+
+---
+
+## ADR-001 · Regra de pontuação é dado versionado, não código
+
+**Contexto.** A portaria muda; se a regra estiver em `if`, cada mudança vira release.
+**Decisão.** Regra é registro com faixas, vigência e versão. Alterar cria nova versão.
+**Consequência.** Ciclo homologado reproduz o próprio resultado para sempre; a mudança fica
+visível num diff; o preço é um modelo de dados mais elaborado e a necessidade de escolher a
+regra vigente por competência.
+
+---
+
+## ADR-002 · Motor de cálculo é função pura
+
+**Contexto.** O cálculo precisa ser auditável e testável nos casos-limite.
+**Decisão.** `calcularAvaliacao` não faz I/O, não lê relógio e não sorteia nada.
+**Consequência.** Testes cobrem fronteiras de faixa, arredondamento e troca de regra sem
+subir infraestrutura; o mesmo insumo devolve sempre o mesmo número. Em troca, quem chama
+precisa buscar os dados antes.
+
+---
+
+## ADR-003 · Peso normalizado só na divisão final
+
+**Contexto.** Normalizar peso a peso antes de somar introduz erro de arredondamento — três
+indicadores perfeitos com peso igual davam 99,9 em vez de 100.
+**Decisão.** `score = (Σ pontos × peso) ÷ (Σ peso × pontuação máxima) × 100`.
+**Consequência.** A memória de cálculo fecha exatamente na conta que ela mesma exibe, que é
+o requisito central do produto. O campo `pesoNormalizado` permanece na memória apenas como
+informação de leitura.
+
+---
+
+## ADR-004 · Configuração global vem de env var em produção até a F3
+
+**Contexto.** O filesystem da Vercel é read-only; o driver de arquivo do config store não
+funciona lá, e o Supabase só entra na F3.
+**Decisão.** Em produção, o store é somente leitura e alimentado por env var; as mudanças
+feitas no painel viram overlay assinado na sessão do próprio admin.
+**Consequência.** O admin ajusta a própria visão à vontade; mudar o que o público vê exige
+alterar variável e fazer redeploy. Está avisado na cara do operador, dentro do painel.
+
+---
+
+## ADR-005 · Conteúdo de ciclo nunca é Client Component
+
+**Contexto.** Um componente cliente dentro de `content/ciclos/` geraria chunk próprio em
+`.next/static`, descobrível mesmo sem estar referenciado.
+**Decisão.** Arquivos de conteúdo são sempre Server Components; interatividade vem de
+componentes compartilhados em `src/components/`.
+**Consequência.** A garantia do §6.3 deixa de depender de disciplina e passa a ser
+verificável — `scripts/verificar-vazamento.ts` confere HTML, payload RSC e bundle a cada
+build. O custo é uma restrição real sobre o que o conteúdo pode fazer.
+
+---
+
+## ADR-006 · Formulários HTML puros em vez de estado no cliente
+
+**Contexto.** Login, lançamento e ações do painel precisam ser simples, acessíveis e
+seguros.
+**Decisão.** Todo POST é `<form method="post">` para route handler, sem JavaScript.
+**Consequência.** Funciona sem JS, simplifica a CSP e reduz o bundle a quase nada. Em troca,
+cada ação recarrega a página e o feedback vem por query string.
+
+---
+
+## ADR-007 · Datas civis em string, nunca `Date`
+
+**Contexto.** O cronograma é a fonte de verdade do projeto e o fuso é America/Recife;
+`toISOString().slice(0,10)` erra o dia toda noite.
+**Decisão.** Datas são `YYYY-MM-DD`; comparação é lexicográfica; a conversão do "agora" usa
+`Intl.DateTimeFormat` com `timeZone`.
+**Consequência.** Elimina uma classe inteira de bugs e faz os testes rodarem igual em
+qualquer TZ de CI. Exige disciplina: nada de `new Date()` dentro de regra de negócio.
+
+---
+
+## ADR-008 · Checklist da matriz vive no Git, não em formulário
+
+**Contexto.** O §7.3 diz que o painel não edita conteúdo. Status de entrega é conteúdo.
+**Decisão.** `src/content/checklist.ts` guarda os status; o painel apenas exibe.
+**Consequência.** Histórico de quem mudou o quê fica no Git — coerente com o que o projeto
+defende — e o checklist continua funcionando em produção, onde não há escrita. O custo é
+editar um arquivo em vez de clicar.
+
+---
+
+## ADR-009 · Botão primário usa tinta sobre laranja, não branco
+
+> **Superada pela ADR-016.** O raciocínio de contraste continua valendo e é por isso que o
+> botão primário do tema escuro também não usa branco. O tema claro que ela descreve não
+> existe mais.
+
+**Contexto.** Branco sobre `#F15A24` dá 3,37:1, abaixo do mínimo AA para texto normal.
+**Decisão.** Botão primário é laranja com texto em tinta (6,45:1). Cinza do briefing fica
+para texto grande; texto pequeno secundário usa uma variante escurecida (5,36:1).
+**Consequência.** A paleta do briefing é respeitada e o contraste passa em AA. A variante
+`--color-cinza-forte` é adição nossa, documentada em `globals.css`.
+
+---
+
+## ADR-010 · Camada de escrita da F2 é em memória, e isso é declarado
+
+**Contexto.** O protótipo precisa demonstrar transição de estado e lançamento antes de
+existir banco.
+**Decisão.** `src/lib/sistema/estado.ts` guarda alterações em memória do processo.
+**Consequência.** A demonstração é real e completa, mas as alterações se perdem no reinício
+— dito no próprio arquivo, em `seguranca.md` e nesta lista. Na F3 vira tabela com RLS,
+mantendo a forma dos dados.
+
+---
+
+## ADR-011 · O schema de banco existe, mas o app não depende dele
+
+**Contexto.** A F3 integrou o Supabase ao runtime. Revisando, o custo não se pagava: quatro
+contas de demonstração para mostrar o que o seletor de perfil já mostrava sem login, e o
+middleware do Edge saltando de 34 kB para 94 kB em toda requisição de `/sistema`.
+**Decisão.** Tirar o Supabase do app; manter `supabase/migrations/` e os testes de RLS como
+artefato versionado.
+**Consequência.** O projeto volta a rodar sem nenhuma credencial e perdeu ~1.300 linhas de
+runtime e duas dependências. O schema continua aplicável a qualquer PostgreSQL por
+`npm run semear`, e ligar um driver de banco depois é acrescentar um arquivo — a camada
+`src/lib/dados/` ficou no lugar justamente para isso.
+
+---
+
+## ADR-012 · Critério da decisão: requisito do professor × escolha de stack
+
+**Contexto.** A dúvida não era técnica, era de escopo: o Supabase é exigência da disciplina
+ou preferência nossa?
+**Decisão.** Separar o que o briefing atribui ao professor (registro §5, matriz de evidências
+§4, pitch, pacotes de SR1/SR2, ML e Direito) do que ele lista como stack (§3, onde o Supabase
+aparece ao lado de framer-motion e shadcn). Nada exige um banco específico; o MVP já cumpria
+tudo com o seed.
+**Consequência.** O critério fica registrado para as próximas decisões de tecnologia: o que
+não for rastreável a um requisito é candidato a corte. Se o professor pedir persistência, o
+schema já está escrito e testado.
+
+---
+
+## ADR-013 · As políticas de RLS foram testadas contra um PostgreSQL real
+
+**Contexto.** Política de RLS escrita não é política funcionando: uma cláusula `using` errada
+falha em silêncio e só aparece quando alguém lê o que não devia.
+**Decisão.** `src/lib/supabase/rls.test.ts` aplica as migrações num banco limpo e exercita
+cada perfil como o PostgREST faria, setando `request.jwt.claims` e assumindo o papel
+`authenticated`.
+**Consequência.** São 21 verificações que continuam rodando no CI mesmo com o app fora do
+banco. Sem `DATABASE_URL_TESTE`, a suíte é pulada e o resto dos testes segue — nada trava
+para quem não tem Postgres à mão.
+
+---
+
+## ADR-014 · Invariantes de negócio são gatilho, não política
+
+**Contexto.** RLS filtra por usuário, mas a service role a ignora. Trilha append-only e
+máquina de estados não podem depender de quem está conectado.
+**Decisão.** No schema, trilha imutável, transição de ciclo um passo por vez, janela de
+lançamento e regra imutável são gatilhos em `plpgsql`.
+**Consequência.** Nem um script com a chave mais privilegiada reescreve a trilha ou reabre um
+ciclo homologado — o script de semeadura teve que obedecer à mesma ordem de estados que a
+interface. No app, sem banco, essas garantias dependem de `src/lib/sistema/estado.ts` ser o
+único caminho de escrita, o que é mais fraco e está declarado em docs/seguranca.md.
+
+---
+
+## ADR-015 · Avançar fase exige sessão de admin, e o controle some para os demais
+
+**Contexto.** Sem Supabase, o `/sistema` voltou a rodar sem autenticação. O estado do ciclo
+vive em variáveis de módulo (`src/lib/sistema/estado.ts`) — memória do processo, compartilhada
+por todos os visitantes daquela instância — e a transição não tem volta pela interface. A tela
+da CAM ainda oferecia o botão a qualquer um, desabilitado, com a legenda "Só o perfil CAM
+avança o estado do ciclo": um convite a trocar o perfil no seletor e clicar. Um clique alheio
+deixaria a janela de lançamento fechada para todo mundo, inclusive para o professor.
+
+**Decisão.** `/api/sistema/ciclo` chama `exigirAdmin()` antes de qualquer coisa, e o formulário
+de transição só é renderizado quando `ContextoSistema.admin` é verdadeiro. O ponto do rodapé
+que apontava para `/admin/entrar` saiu. Lançamento, contestação e o seletor de perfil continuam
+abertos: são o MVP que o professor precisa navegar, são aditivos e aparecem na trilha.
+
+**Consequência.** A demonstração deixa de ser adulterável por quem passa pelo site, e a prévia
+"ver como visitante" ficou fiel — `admin` também é `false` nela, então o admin enxerga
+exatamente os controles que o visitante enxergaria. O que **não** muda: o repositório é público
+e `docs/seguranca.md` descreve o painel, porque o §7 exige essa análise. Quem protege de fato é
+`ADMIN_SENHA` trocada em produção, não o esconderijo — enquanto ela for `0321`, isto é
+arrumação de interface, não controle de acesso. A resposta é 404, não 403, pela mesma razão de
+`exigirAdmin` em `/admin`: não confirmar o mecanismo a quem não deveria conhecê-lo.
+
+---
+
+## ADR-016 · Identidade "folha de especificação": escuro, monoespaçado, um acento
+
+**Contexto.** O visual anterior era claro e sans-serif, com a mono reservada aos números. Ele
+funcionava e não dizia nada: parecia um site institucional qualquer. O produto é uma memória
+de cálculo auditável, e a página deveria parecer o que o produto é.
+
+**Decisão.** Modo escuro (`#0A0B0A`), tudo monoespaçado (Martian Mono no display, JetBrains
+Mono no resto), blocos delimitados por hairline de 1px com `margin-top: -1px` para as bordas
+colapsarem como tabela, raio zero exceto em pílulas, e **um único acento**. O acento é o
+laranja da CESAR tirado do arquivo da logo — `#F7580B`, não o `#F15A24` do briefing, que não
+bate com o asset real. O verde da referência original foi descartado: dois acentos numa
+página com a logo laranja matam a identidade.
+
+**Consequência.** Contraste conferido em todos os pares que a identidade usa: acento sobre
+fundo 5,97:1, texto apagado sobre fundo 6,00:1, acento sobre o preenchimento de pílula 5,47:1,
+`ink` sobre acento sólido 5,97:1 — todos acima de 4,5:1. A escala tipográfica do briefing
+original teve que ser recalibrada: mono tem avanço fixo e bem mais largo, e a headline mínima
+de 2,5rem estourava 360px. O que se perdeu: a paleta clara do §12 do briefing deixou de
+existir, e a ADR-009 foi superada. O que se ganhou: uma tela que a banca reconhece de longe.
+
+---
+
+## ADR-017 · Reveal no scroll sem JavaScript
+
+**Contexto.** A identidade pede que os blocos entrem com fade e deslocamento. O site inteiro
+funciona sem JavaScript (ADR-006) e não queríamos abrir exceção por causa de animação.
+
+**Decisão.** `animation-timeline: view()` em CSS, dentro de `@supports`. Onde houver suporte,
+o bloco anima conforme o scroll; onde não houver, ele já nasce visível.
+
+**Consequência.** Zero bytes de JS e nenhum observer. Em contrapartida, o conteúdo abaixo da
+dobra fica em `opacity: 0` até ser rolado — o que confunde captura de tela de página inteira
+e exigiria cuidado se algum dia houver impressão. `prefers-reduced-motion` desliga tudo e
+força opacidade cheia.
+
+---
+
+## ADR-018 · O site é uma página só, e por isso a raiz deixou de ser estática
+
+**Contexto.** O registro morava em `/registro` e a raiz era uma bifurcação: o professor tinha
+que escolher por onde entrar antes de saber o que havia de cada lado. Duas páginas para um
+site que cabe numa.
+
+**Decisão.** A raiz passa a conter tudo — problema, equipe, marcos e o registro semanal, cada
+semana num `<details>` que abre com a setinha. A mais recente já vem aberta. `/registro` vira
+redirecionamento para `/#registro`, para não quebrar link já compartilhado. O único caminho
+que sai da página é o sistema.
+
+**Consequência.** A raiz **deixou de ser estática**: o gate de release lê cookie e depende do
+calendário, então HTML assado no build congelaria o release ou vazaria semana futura. Ganhou
+`force-dynamic` e uma renderização por requisição — o preço de ter o registro ali.
+
+Duas armadilhas ficaram documentadas no código. A primeira: `<details>` fechado **continua no
+DOM**, então a sanfona não é mecanismo de ocultação; semana não liberada não pode ser
+renderizada, dobrada ou não, e o gate segue acontecendo antes do carregador. A segunda: as
+checagens de vazamento caíram de 120 para 90 porque `/registro` saiu da lista de rotas
+conferidas — não é cobertura perdida, é a mesma rota deixando de ser conferida duas vezes.
+
+O acordeão é `<details>` nativo, não Radix: zero JavaScript, teclado de graça, e nenhum
+componente cliente perto de conteúdo de ciclo (ADR-005 e ADR-006).
+
+**Nenhuma semana abre por padrão.** A primeira versão abria a mais recente. O uso real é
+outro: o professor volta toda semana procurando UMA linha, e qualquer semana aberta empurra
+as demais para fora da tela. A semana corrente vem marcada com uma pílula, o que resolve
+achar sem ocupar espaço — e ela nem sempre é a do topo, porque o release roda sete dias à
+frente.
+
+**O que saiu por repetição.** O bloco de números (30 indicadores / 10 áreas / 2 regras)
+dizia o mesmo que o subtítulo do hero e que o bloco "o problema" — e dizia com os números da
+base sintética, que são os mais fracos dos três. O bloco "memória de cálculo" repetia a
+headline e o card "gestor confere"; a fórmula migrou para dentro do fluxo, onde ela pertence,
+e a segunda chamada para o sistema saiu junto. A logo da CESAR ficou só no hero. O subtítulo
+do hero foi reescrito para dizer o que o sistema **faz**, já que o problema tem bloco próprio.
+
+---
+
+## ADR-019 · Documento de entrega é TSX renderizado, não PDF anexado
+
+**Contexto.** SWOT, personas, mapa de empatia e backlog estavam escritos num bloco
+"Detalhamento" no fim de cada semana, e as evidências apontavam para `/registro#s2` — uma
+URL que deixou de existir quando o registro virou seção da raiz. Quem avaliasse teria que
+rolar um bloco longo procurando o documento certo, ou clicar num link morto.
+
+**Decisão.** Documento vira peça de primeira classe: `ModuloCiclo.documentos` é uma lista de
+`{ id, titulo, resumo, Conteudo }`, e cada um abre numa sanfona própria dentro da semana. A
+evidência correspondente aponta para a âncora `#doc-<ciclo>-<id>`.
+
+**Consequência.** O professor clica no título e lê ali — sem PDF, sem aba nova, sem download,
+sem link que expira. O documento fica versionado em TSX: um diff mostra o que mudou na SWOT
+entre duas semanas, coisa que anexo binário não dá. Dois testes novos seguram o arranjo: um
+recusa âncora sem documento correspondente, outro exige id único e resumo em cada documento.
+
+O custo é real e vale dizer: escrever documento em TSX é mais trabalhoso que exportar um PDF
+do Figma ou do Docs, e quem escreve precisa usar os primitivos de `components/conteudo.tsx`
+em vez de formatar à vontade. Em troca, o documento é conteúdo do site — pesquisável,
+responsivo, acessível e sujeito às mesmas checagens do resto.
+
+**O selo saiu junto.** Com todos os blocos validados, a pílula "validado" repetida 40 vezes
+não informava nada. O `Selo` agora só renderiza em rascunho: o carimbo existe para avisar do
+que ainda não foi revisado, e ausência de aviso é a informação.
+
+---
+
+## ADR-020 · Semanas futuras são planejamento declarado, não relato
+
+**Contexto.** Pediu-se o registro preenchido até a Semana 12. Só que essas semanas não
+aconteceram — a Semana 5 é 19/09 e hoje é agosto. O registro é o artefato factual que a
+banca avalia: escrever "Avanços" de uma semana futura é afirmar que algo ocorreu.
+
+**Decisão.** Escrever as dez semanas restantes como **plano**, usando o mecanismo que o
+projeto já tinha: todos os blocos com selo `rascunho`, que a interface exibe como pílula
+visível — e as semanas já vividas, validadas, não exibem selo nenhum. A distinção fica na
+tela, não num rodapé que ninguém lê. O bloco `feedback` fica em `nenhum` em todas elas:
+retorno de professor ou de cliente é fala de terceiro, e escrever por eles seria fabricar
+evidência, não planejar.
+
+**Consequência.** O semestre inteiro fica navegável, o professor vê que houve planejamento
+até o SR2, e ninguém confunde plano com relato. O custo é disciplina de manutenção: quando a
+semana chegar, alguém precisa reescrever o bloco contra o que de fato aconteceu e trocar o
+selo — se não fizer, o site fica dizendo "rascunho" numa semana já vencida, que é o sintoma
+correto de um registro desatualizado.
+
+---
+
+## ADR-021 · A vitrine abre com prazo, não com interruptor
+
+**Contexto.** Para uma apresentação, o site inteiro precisa ficar visível por algumas horas.
+`RELEASE_OVERRIDE=sr2` já faz isso — e fica aberto até alguém lembrar de fechar. Numa semana
+de entrega, ninguém lembra.
+
+**Decisão.** `RELEASE_ABERTO_ATE` recebe um instante ISO 8601. Enquanto o relógio não passar
+dele, TODO visitante enxerga os 18 ciclos e as oito telas; depois, o recorte volta sozinho.
+`janelaAberta` é função pura com o "agora" injetado, e a faixa do topo anuncia a vitrine
+para todo mundo — não só para quem tem sessão.
+
+**Consequência.** Isto **suspende a garantia do §6.3 de propósito**, e é a única coisa no
+projeto que faz isso: com a janela aberta, conteúdo de semana futura chega ao HTML do
+visitante. É o comportamento pedido, tem prazo, e se anuncia. `verificar-vazamento` roda sem
+a variável e continua provando o comportamento normal — 90 verificações.
+
+Valor ausente, vazio ou malformado fecha a janela. Uma env var digitada errada não pode
+derrubar o site e, muito menos, abri-lo por acidente: `'amanhã de manhã'` resulta em fechada,
+com teste que prova.
+
+**Visibilidade e calendário são coisas separadas, e as duas precisam andar.** A primeira
+versão desta janela só liberava o que estava visível — e não bastava: com todos os ciclos no
+ar mas o relógio em agosto, o topo continuava dizendo "próximo marco: Kick-off, faltam 27
+dias" e o SR2 aparecia como "a realizar". `RELEASE_DATA_SIMULADA` move o calendário do site
+inteiro, e só funciona com a janela aberta — quando o prazo vence, a data volta junto com a
+visibilidade, sem ninguém precisar lembrar.
+
+**A vitrine é versionada, e a env var só a corrige.** `src/content/vitrine.ts` carrega o
+prazo e a data simulada no próprio código, então abrir a vitrine é um `git push`, e não uma
+visita ao painel da Vercel para colar dois valores e pedir redeploy. `RELEASE_ABERTO_ATE` e
+`RELEASE_DATA_SIMULADA` continuam existindo e vencem o valor versionado, para quem opera
+conseguir consertar uma data errada às pressas sem abrir o editor.
+
+Consequência que precisou de conserto em três lugares: com a vitrine aberta por padrão,
+`verificar-vazamento` e o Playwright passariam a medir a exceção em vez do comportamento
+normal, e a garantia do §6.3 ficaria sem prova justamente nos dias em que ela mais importa.
+Os dois fecham a janela explicitamente por env var, e os testes de unidade recebem a vitrine
+por parâmetro em vez de ler a global.
+
+**A simulação achou um bug.** Com o site em janeiro de 2027, a pílula "esta semana" grudou no
+SR2. `cicloCorrente` devolve o último ciclo já vencido, o que está certo para "qual foi o
+último" e errado para "qual é esta semana" — e a diferença só aparece depois do fim do
+cronograma. Nasceu daí `ehSemanaCorrente`, que exige que o dia caia dentro dos sete dias do
+ciclo, com teste que fixa exatamente esse caso.
+
+---
+
+## ADR-022 · Modelos treinam offline; o site lê o resultado versionado
+
+**Contexto.** A tela de analytics precisava sair de heurística para modelo treinado. Rodar
+scikit-learn dentro do Next não é opção: o site é serverless, e carregar o runtime de ML a
+cada requisição custaria segundos de cold start para exibir números que só mudam entre
+deploys.
+
+**Decisão.** `ml/` treina offline em Python e escreve `src/content/ml/resultados.json`, que é
+versionado. O app lê o JSON por `src/lib/ml.ts` e nunca infere em tempo real. O pacote carrega
+semente, commit, versão do sklearn e data do treino.
+
+**Consequência.** A tela fica instantânea e — o que importa mais — o número fica auditável:
+qualquer pessoa reproduz rodando `python ml/gerador.py && python ml/exportar.py`. O custo é
+que o JSON precisa ser regerado quando o gerador ou os modelos mudarem; não há automação que
+force isso, e é uma pendência honesta.
+
+**Três decisões metodológicas ficaram no código, não só no notebook.** A separação
+treino/teste é **temporal**, nunca aleatória — sortear linhas deixaria o modelo ver
+competências futuras do mesmo indicador, que é o erro clássico de vazamento em série
+temporal. Todo modelo é publicado **com a linha de base ao lado**, porque acurácia sem
+referência engana num alvo desbalanceado. E o clustering agrupa **áreas**, nunca pessoas.
+
+**O resultado negativo fica publicado.** O classificador de "vai bater a meta" não supera o
+palpite de chutar a classe majoritária — só 5 dos 30 indicadores batem a meta no mês de
+teste, e não há sinal a extrair. A tela diz isso em vermelho. Ao lado dele fica a mesma
+família de modelo numa pergunta bem posta ("vai melhorar?"), que supera a referência com F1
+de 0,80. Publicar as duas é a diferença entre relatar e escolher a métrica depois de ver o
+resultado.
+
+**E o limite que a lente de Direito impôs à de ML:** nenhuma saída dos modelos entra no
+cálculo da gratificação. O art. 20 da LGPD dá ao titular direito a revisão de decisão
+automatizada, e gratificação afeta remuneração — por isso o motor de cálculo é determinístico
+e auditável, e o ML fica fora dele, sinalizando onde olhar sem decidir nada.
+
+---
+
+## ADR-023 · O sistema é uma página só, e o perfil deixa de ser decoração
+
+**Contexto.** Cada uma das oito funcionalidades era uma rota (`/sistema/cam`,
+`/sistema/auditoria`, e assim por diante). Clicar num item do menu levava embora, e de lá não
+havia caminho de volta a não ser o botão do navegador. A barra do topo eram links de texto
+sem forma de botão, repetindo uma grade de cartões logo abaixo: duas navegações para o mesmo
+lugar, e nenhuma delas parecendo clicável. Quem usou descreveu como "completamente
+desorganizado", e estava certo.
+
+Havia um problema mais sério embaixo desse. **Cinco das oito telas não olhavam o perfil.**
+`indicadores`, `meu-resultado`, `auditoria`, `painel-gestao` e `analytics` renderizavam
+inteiras para qualquer um: o filtro existia só na montagem do menu, então quem digitasse a
+URL entrava. O briefing pede perfis de acesso; o que existia era ordenação de menu com outro
+nome.
+
+**Decisão.** Três mudanças que só fazem sentido juntas.
+
+1. **`/sistema` monta tudo.** O corpo de cada tela virou componente em
+   `src/components/sistema/telas/`, sem gate por dentro, e a página os empilha em `<details>`,
+   o mesmo padrão do registro semanal (ADR-006). As oito rotas antigas continuam existindo e
+   redirecionam para `/sistema?abrir=<id>#tela-<id>`.
+
+2. **`exigirPerfil` ao lado de `exigirFeature`.** Além do gate de release, a tela confere se a
+   funcionalidade pertence ao perfil ativo, e responde **404**, não 403, pela mesma razão de
+   `/admin`: da porta, "ainda não liberado" e "não é seu" precisam ser indistinguíveis. O
+   redirecionamento das rotas antigas vem depois do gate, nunca antes. Um teste percorre as
+   oito telas contra os quatro perfis, sem amostragem.
+
+3. **Sumário grudado no topo, com ícone e borda.** Só as telas do perfil. Nada em cinza, nada
+   de "indisponível": o que não é seu não aparece. Os cartões duplicados sumiram.
+
+**Por que `abrir=` e não a âncora sozinha.** Existe uma regra nova de HTML que manda expandir
+um `<details>` quando a navegação aponta para dentro dele. Ela funciona ao carregar a página
+com fragmento, e não em todo caminho de clique nem em todo navegador — medimos. Um item de
+sumário que rola até um bloco fechado é pior do que um que não rola. Com `abrir=` quem decide
+é o servidor, e o resultado é igual em qualquer navegador, com ou sem JavaScript.
+
+**A query string ganhou espaço de nomes.** Oito telas dividindo uma URL fariam `ciclo`
+significar quatro coisas ao mesmo tempo, e um lançamento bem-sucedido pintaria a faixa verde
+também no dashboard da CAM, que não fez nada. Cada tela leva um prefixo (`aud_ciclo`,
+`gest_ciclo`, `res_ciclo`), a faixa de resultado carrega `de=<tela>`, e os formulários levam
+campos ocultos que preservam o estado das vizinhas. É feio na barra de endereço e é a única
+forma de o estado de uma tela não vazar para a outra.
+
+**Consequência.** A armadilha da ADR-018 vale aqui em dobro: **sanfona fechada não esconde
+HTML.** O que protege é a ordem dos gates em `page.tsx` — release, depois perfil, e só então o
+componente é montado. Inverter isso derrubaria o §6.2 sem que nada aparentasse quebrar. A
+verificação de vazamento ganhou uma checagem para exatamente esse caso: nenhuma sanfona de
+tela fora do perfil aparece no HTML de `/sistema`.
+
+O custo é que uma requisição renderiza as oito telas, abertas ou não. Para um MVP com base
+sintética em memória isso não pesa; com banco de verdade, cada tela precisaria carregar sob
+demanda.
+
+---
+
+## ADR-024 · O tutorial passou a conduzir, e o seletor de perfil ganhou o primeiro JavaScript
+
+**Contexto.** O tutorial por papel da ADR-023 era uma lista numerada dentro de uma sanfona.
+Ensinava e não conduzia: a pessoa lia os nove passos e depois se virava sozinha, procurando na
+tela o botão que o texto descrevia. Quem usou pediu um tutorial que "leve a pessoa pelo
+sistema mesmo, conduzindo e mostrando os botões".
+
+Na mesma conversa veio outra queixa, menor e mais óbvia: trocar o papel no seletor exigia um
+segundo clique num botão "Trocar". Escolher um papel numa lista já é a ação; pedir confirmação
+para uma troca que não destrói nada é cerimônia sem função.
+
+**Decisão.** `?passo=N` põe `/sistema` em modo tutorial. Sai o sumário, saem os papéis, saem as
+outras sete telas. Fica a tela do passo, montada e aberta, com o elemento exato de que o texto
+fala contornado em laranja e etiquetado, e uma barra grudada no rodapé com progresso, o que
+fazer, o porquê dobrado e os botões de anterior, próximo e sair.
+
+O destaque é um `<style>` injetado que casa com `#alvo-<nome>`. As telas não sabem que existe
+tutorial: elas só declaram `alvo="cam-funil"` num `Painel`, que vira `id="alvo-cam-funil"`. O
+mesmo `id` serve de âncora, então o navegador para exatamente no elemento contornado. Um
+atributo, dois usos, nenhum nome duplicado, e um teste que falha se um passo apontar para alvo
+que não existe.
+
+**Tudo no servidor.** Cada passo tem URL própria, o botão "voltar" do navegador funciona, e dá
+para mandar "olha o passo 4" por mensagem. Um passeio em overlay faria mais efeito e
+dependeria de medir posições no cliente, que é frágil justamente no celular.
+
+**O seletor de perfil virou o primeiro componente cliente do projeto.** `onChange` envia o
+formulário; sem JavaScript, um `<noscript>` devolve o botão. É a primeira exceção à ADR-006, e
+ela é pequena de propósito: nada do sistema depende desse JavaScript para funcionar, é só
+conforto.
+
+**Consequência.** A barra do guia é `sticky bottom-0`, não `fixed`. Com `fixed` era preciso
+adivinhar um `padding-bottom` que compensasse a altura dela, e a altura muda com o texto e com
+a tela: no celular a primeira versão comeu dois terços da janela. Grudada, ela flutua enquanto
+se rola e entra no fluxo no fim da página, sem tapar nada.
+
+---
+
+## ADR-025 · A terceira lente era Nuvem, e o projeto estava chamando de Direito
+
+**Contexto.** Uma auditoria do repositório contra os dois PDFs da disciplina encontrou uma
+divergência que ninguém tinha visto. A Matriz Integrada nomeia as disciplinas-alvo no próprio
+título: **Segurança da Informação, Aprendizado de Máquina e Arquitetura Nativa na Nuvem**. O
+texto dos critérios pede infraestrutura em oito das treze semanas, com as palavras
+"componentes de infraestrutura", "integração entre componentes" e "infraestrutura de
+execução".
+
+O projeto vinha se descrevendo como cobrindo "Projeto, Machine Learning e Direito Digital". A
+palavra "Direito" não aparece na matriz; "LGPD" também não.
+
+**Decisão.** Entra a lente que faltava, sem tirar a que sobrava. `docs/nuvem.md` e dois
+documentos no registro, na Semana 5 (onde cada componente executa, pipeline ponta a ponta,
+doze fatores) e na Semana 12 (trade-offs, escala e o que falta para virar produção). A lente
+de Direito continua: um sistema que decide remuneração cai no art. 20 da LGPD, e a análise de
+privacidade sustenta metade dos critérios de Segurança da Informação.
+
+**Consequência.** A auditoria virou dado versionado em `src/content/auditoria.ts`: cada
+exigência do professor com o texto literal, o estado e o caminho no repositório onde ela está
+atendida. Vinte e quatro requisitos rastreados, dezoito atendidos, cinco parciais e um fora de
+escopo declarado. O dossiê renderiza essa tabela, então a auditoria envelhece junto com o
+código em vez de virar uma conversa perdida.
+
+**A ressalva mais importante ficou escrita na própria lente:** nenhuma métrica de produção foi
+medida. Os números de escala em `docs/nuvem.md` são raciocínio de capacidade, não benchmark, e
+dizer o contrário seria inventar evidência, que é exatamente o que este projeto passou o
+semestre inteiro recusando.
+
+---
+
+## ADR-026 · A copy fala com quem não é da área, e o selo de rascunho saiu de cena
+
+**Contexto.** Quem usou o site relatou, com razão, que a linguagem era de especialista:
+"memória de cálculo" não dizia para que servia, "ciclo", "homologação" e "publicação" eram
+palavras soltas, o subtítulo do hero ("a regra vira dado versionado, e cada valor abre até a
+origem que o gerou") só fazia sentido para quem já sabia o que era dado versionado. E as
+semanas futuras exibiam a pílula "rascunho", que fala do processo interno da equipe e parecia
+defeito para quem lê. O usuário-alvo declarado passou a ser alguém de pouca escolaridade, que
+é de fato quem opera parte do processo real.
+
+**Decisão.** Uma passada de linguagem no site inteiro, com três regras práticas:
+
+1. **Palavra do processo ganha tradução ao lado, não substituição.** "Homologado" continua
+   existindo, porque é o nome real da etapa na portaria; mas todo lugar que o exibe tem a
+   explicação em uma frase a um clique ("A conta foi feita e a comissão aprovou o resultado").
+   Nasceu `EXPLICACAO_ESTADO` em `calculo/tipos.ts`, exibido no dashboard da CAM e na seção
+   "como funciona" da página inicial.
+2. **Metáfora do cotidiano no lugar do termo de sistema.** Score virou "nota do mês (score)";
+   competência virou "mês"; anonimizar virou "esconder os nomes"; evidência virou "de onde
+   veio"; trilha append-only virou "histórico que ninguém consegue apagar". O termo técnico
+   fica entre parênteses quando precisa continuar rastreável.
+3. **Toda tabela diz como se lê.** A memória de cálculo ganhou um parágrafo "como ler" antes
+   da tabela, porque mostrar a conta sem dizer para que ela serve era exatamente a reclamação.
+
+**A seção "o ciclo" virou "como funciona".** Explica primeiro o site em duas frases (diário
+do projeto + programa de exemplo) e depois desenha o fluxo do mês com uma frase de explicação
+embaixo de cada etapa e ações numeradas (1 informa, 2 faz a conta, 3 confere).
+
+**O selo "rascunho" não renderiza mais.** O dado continua nos arquivos de ciclo e o teste
+continua exigindo validador em bloco validado; só a pílula saiu da frente do visitante. É a
+segunda vida do mesmo aprendizado da ADR sobre "validado": selo que fala do processo interno
+da equipe não é informação para quem avalia o produto.
+
+**Consequência.** Os tutoriais foram reescritos por inteiro na mesma língua (25 passos), e a
+tela é sempre descrita pelo que a pessoa VÊ ("cada barra mostra", "o cartão do topo"), não
+pelo que o sistema é. O custo declarado: a copy ficou menos densa em vocabulário de auditoria,
+que era parte da identidade "folha de especificação". A identidade visual fica; o vocabulário
+passa a servir o leitor, não o contrário.
+
+---
+
+## ADR-027 · Modo claro por cookie, pintado no servidor
+
+**Contexto.** A identidade nasceu como "folha de especificação em modo escuro" (ADR-016), e
+modo escuro sozinho é uma escolha estética imposta a quem lê. Num sistema que vai ser aberto
+em sala, projetado em reunião e usado em telas ruins de repartição, ter só o escuro é
+limitação, não posição.
+
+**Decisão.** Dois temas, com o mesmo desenho. Nada de layout muda entre eles: mudam onze
+tokens de cor. O escuro segue no `@theme`; o claro vive em `[data-tema='claro']`.
+
+**A escolha vive num cookie e é aplicada PELO SERVIDOR**, no atributo `data-tema` do `<html>`.
+O caminho comum (ler `localStorage` no cliente) pinta a página no tema errado por um quadro
+antes de corrigir, e o remendo habitual para isso é um script inline bloqueante no `<head>`.
+Aqui o HTML já chega pintado, e há teste que busca o HTML cru e exige `data-tema="claro"`
+dentro dele. O botão é um `<form>` que dá POST e volta, como o seletor de perfil: funciona sem
+JavaScript.
+
+**O acento muda de valor no claro, e isso é decisão.** O laranja da CESAR (#F7580B) dá 5,97:1
+sobre o fundo escuro e apenas 3,2:1 sobre papel: reprovaria em AA como texto. No claro ele vira
+#A83C05, o mesmo laranja com menos luz, que devolve exatamente os mesmos 5,97:1. A cor crua da
+marca continua disponível em `--color-laranja`, para preenchimento e para a logo, onde
+contraste de texto não se aplica. `--color-ink` inverte junto: no escuro é texto escuro sobre
+laranja claro, no claro é texto branco sobre laranja escuro.
+
+**Consequência declarada: ler cookie no layout raiz torna toda rota dinâmica.** O site já era
+`force-dynamic` nas páginas que importam por causa do gate de release; o que se perde são as
+duas últimas páginas pré-renderizadas, `/registro` e `/transparencia-ia`. Trocar a estática
+delas por ausência de piscada é o negócio que este ADR aceita.
+
+**O teste de contraste dobrou de tamanho e ganhou uma trava nova:** ele agora percorre os oito
+pares nos dois temas (19 casos), e falha se o tema claro esquecer de redefinir qualquer token
+de cor do escuro. Token esquecido herdaria o valor do escuro em silêncio, e o resultado seria
+texto branco sobre papel branco.
+
+**Um defeito antigo apareceu no caminho.** Quatro caixas de seleção usavam
+`accent-[color:var(--color-laranja)]`, e `--color-laranja` nunca existiu: o valor resolvia
+para inválido e o navegador caía no azul do sistema. Ou seja, nenhuma caixa de seleção do
+projeto jamais foi laranja. O token passou a existir de fato, e as caixas apontam para
+`--color-acento`, que acompanha o tema.
+
+---
+
+## ADR-028 · As fontes passam a ser arquivo versionado, não download de build
+
+**Contexto.** O CI falhou cinco vezes em dois dias, em `main` e na branch de trabalho, e
+nenhuma das falhas tinha a ver com o código. O sinal que denunciou isso foi o mais estranho
+possível: **o mesmo commit passava numa branch e quebrava na outra**, minutos depois, sem
+uma linha de diferença entre as duas execuções.
+
+A causa está no `next/font/google`. Ele não é um link para o Google no navegador de quem
+visita, e nisso a escolha original estava certa: ele baixa o `.woff2` e serve do próprio
+domínio, sem expor o visitante. O problema é *quando* ele baixa. É **em todo build**, contra
+`fonts.gstatic.com`, e sem cache entre execuções do runner. Quando a rede do GitHub Actions
+engasgava, o log era este:
+
+```
+Failed to fetch font file from `https://fonts.gstatic.com/s/martianmono/...woff2`.
+Retrying 3/3...
+NextFontError: Failed to fetch `Martian Mono` from Google Fonts.
+> Build failed because of webpack errors
+```
+
+Três tentativas, todas falhas, build morto. Duas vezes derrubou o passo `Build de produção`
+do job `verificar`; três vezes derrubou o `webServer` do Playwright, que compila o projeto
+antes de abrir o navegador, e aí o job `e2e` nem chegou a rodar um teste.
+
+**Decisão.** Os cinco arquivos passam a viver em `src/fontes/`, e o layout usa
+`next/font/local`. São os mesmos recortes de antes, o subconjunto latin, que já cobre todo o
+português: Martian Mono nos pesos 500 e 600, JetBrains Mono nos pesos 400, 500 e 600. Noventa
+e seis kilobytes no repositório, uma vez, contra um download a cada build de cada máquina.
+
+O build deixa de ter qualquer dependência de rede. Isso vale para o CI, mas vale igualmente
+para quem clonar o repositório e rodar `npm run build` num café com wi-fi ruim, ou daqui a
+três anos, quando a URL daquele `.woff2` já não responder.
+
+**Consequência.** `src/lib/fontes.test.ts` guarda as duas metades da correção: ninguém volta
+a importar de `next/font/google`, e todo arquivo declarado no layout existe no disco e começa
+com a assinatura `wOF2`. A verificação de assinatura é o que impede o caso chato, uma fonte
+truncada ou uma página de erro salva no lugar do arquivo, de passar como se estivesse certa.
+
+**O que isto não conserta.** Trocar de peso ou de família deixou de ser editar uma linha:
+agora exige baixar o arquivo e commitá-lo. É o custo aceito, e é pequeno perto de um CI que
+falha por sorte da rede. As falhas antigas continuam no histórico do Actions, vermelhas: elas
+não eram defeito do projeto e não há o que reescrever nelas.
+
+---
+
+## ADR-029 · Teste de ponta a ponta não escreve data nem id de ciclo à mão
+
+**Contexto.** Ao conferir o CI, três testes de Playwright falharam por conta própria, sem
+ninguém ter tocado no código que eles exercitam. Dois diziam, com o id escrito na mão, que o
+visitante **não** podia ver a `s4`. A `s4` entra no ar em 29/08, e o motor de releases adianta
+sete dias: em 22/08 ela virou pública, e a afirmação virou falsa sozinha.
+
+Um teste com data embutida não fica errado no dia em que falha. Ele já nasceu errado e apenas
+cobra a conta depois, quando ninguém se lembra do porquê. É a pior forma de vermelho: parece
+regressão, não é, e queima o tempo de quem for investigar.
+
+**O terceiro era diferente e pior.** `getByText('esta semana')` casa por substring, e o corpo
+das semanas diz "Nenhum bloqueio n*esta semana*" e "Registro d*esta semana* ainda não
+publicado". O `.first()` pegava um desses, dentro de sanfona fechada, portanto invisível. O
+teste reprovava enquanto a pílula funcionava perfeitamente. Passou até hoje por sorte de
+ordem no DOM, não por estar certo.
+
+**Decisão.** `e2e/cronograma.ts` calcula, da mesma fonte única de verdade que a aplicação usa,
+qual ciclo está público e qual é o primeiro ainda oculto. Os testes pedem "um ciclo oculto",
+nunca "a s4". O terceiro passou a usar `{ exact: true }`.
+
+O helper ignora os imprensados: eles têm carregador `null` de propósito, então procurar o
+marcador de um deles não acha nada nem para o admin. O registry é `server-only` e não pode ser
+importado do Playwright, então a dedução usa `tipo: 'pausa'` do cronograma, e
+`cronograma.test.ts` guarda a equivalência entre os dois. Sem essa guarda, o dia em que as
+duas listas divergissem apareceria como um marcador não encontrado no Playwright, que não diz
+nada a quem lê.
+
+**Consequência.** As 78 jornadas passam e continuam passando na semana que vem, sem manutenção
+de calendário. O que sobrou embutido é deliberado: o teste da vitrine fixa `2026-10-03` porque
+o ponto dele é justamente simular uma data, e ali o número é o objeto do teste, não uma
+suposição sobre quando alguém vai rodá-lo.
+
+---
+
+## ADR-030 · Um link com chave abre a visão completa, sem senha e sem painel
+
+**Contexto.** Ver o projeto completo, com todas as entregas e o sistema inteiro como
+estarão depois do SR2, exigia o ritual do painel: abrir `/admin/entrar`, digitar a senha,
+marcar "ver como visitante", preencher uma data simulada. Para OPERAR o site esse ritual se
+justifica; para só olhar, que é o uso de todo dia, ele é atrito puro. O pedido foi direto:
+"um link separado, que só eu tenha, que dá para ver o sistema completo como se estivéssemos
+em 2027".
+
+**Decisão.** Uma URL-capacidade: `/vitrine/<chave>`. A chave vem de `CHAVE_VITRINE`, fora
+do código, porque o repositório é público e chave versionada seria um link público com
+outro nome. Chave certa grava um cookie assinado (`prumo_vitrine`, 150 dias) e aquele
+navegador passa a ver o site como se a janela da vitrine (ADR-021) estivesse aberta só para
+ele: todos os ciclos, todas as telas, com a mesma data simulada da vitrine. Uma faixa
+discreta no topo diz o que está acontecendo e dá a saída (`/vitrine/sair`).
+
+O link é deliberadamente MENOS que o painel: não dá sessão de admin, não mostra a faixa de
+modo completo, não avança ciclo. Visão, não operação. O painel continua existindo para
+operar.
+
+Reuso em vez de invenção: a conferência da chave é a mesma da senha (HMAC dos dois lados,
+comparação em tempo constante), o cookie usa a mesma assinatura da sessão, a rota usa o mesmo
+mecanismo de limite de tentativas do login (num balde próprio, para um não zerar nem
+bloquear o outro), e a visão reaproveita o caminho da janela da vitrine em `obterVisao`,
+com a sessão de admin vencendo o cookie para a prévia de visitante não mentir. O que a decisão acrescentou de novo são ~90 linhas de módulo e duas
+rotas.
+
+**Consequência.** Falha fechado três vezes: sem `CHAVE_VITRINE`, sem `ADMIN_COOKIE_SECRET`
+ou com chave errada, a resposta é o mesmo 404 de rota inexistente (§6.2: da porta, "não
+configurado", "não existe" e "não é seu" são indistinguíveis). O §6.3 fica suspenso só para
+o portador do cookie, como já ficava para todos com a janela aberta; o script de vazamento
+roda sem cookie e continua provando o comportamento público. A análise de superfície de
+ataque, incluindo a assimetria de revogação (trocar a chave não mata cookies já emitidos;
+trocar o segredo mata), está em docs/seguranca.md.
+
+---
+
+## ADR-031 · O sistema ganhou pele própria: sans do aparelho, cartões, fundo neutro
+
+**Contexto.** A identidade "folha de especificação" (ADR-016) nasceu para o registro: uma
+banca técnica lendo um artefato acadêmico. O /sistema tem outro leitor, o servidor público
+que informa números e confere a própria nota, e o feedback de uso foi direto: tudo
+monoespaçado e minúsculo cansa, os formulários pareciam confusos, faltava símbolo, faltava
+modernidade. A referência pedida foi a Apple.
+
+**Decisão.** O /sistema tem identidade visual própria, ligada por um atributo de escopo
+(`data-pele="sistema"`) no layout. A pele: letra do próprio aparelho (SF no iPhone e no Mac,
+Segoe no Windows, Roboto no Android), em caixa natural; fundo neutro com cartões
+arredondados e sombra sutil; campos de formulário com preenchimento e canto; botões-pílula;
+ícone em cada painel e em cada aviso; trilho de etapas com marca de concluído. O site
+continua folha de especificação: são duas peles, uma por camada, cada uma com o leitor
+certo.
+
+**Como, sem bifurcar o código.** Por REMAPEAMENTO de token: a pele redefine
+`--color-fundo`, `--color-linha` etc. para os valores `--color-sis-*`, e os utilitários
+continuam os mesmos. Os valores moram nos dois blocos de tema de `globals.css`, então a
+regra 10 continua valendo (cor nova nos dois blocos, contraste medido por teste: oito pares
+novos da pele, AA nos dois temas). A regra 11 também: um acento só, o laranja, que na pele
+escura clareia um degrau (`#fb6b1f`) porque o tom do site daria 4,3:1 sobre o cartão
+`#1c1c1e`, exatamente como o claro já fazia desde a ADR-027. As regras de escopo ficam fora
+de `@layer` de propósito: CSS sem camada vence utilitário do Tailwind, e é isso que permite
+reestilizar sem tocar em componente do site.
+
+**Consequência.** Nenhuma fonte nova baixada (a sans do aparelho custa zero byte e zero
+rede, coerente com a ADR-028). O tutorial, os gates e as jornadas continuam os mesmos: as
+88 passam sem mudança de comportamento. O custo aceito: a partir daqui, quem mexe no
+/sistema pensa em DUAS aparências para o mesmo componente compartilhado, e o teste de
+contraste é quem segura as duas paletas no chão.
+
+---
+
+## ADR-032 · A arquitetura ganhou página no site, com o prompt que a redesenha
+
+**Contexto.** Os diagramas C4 de contexto e contêineres existiam desde o início em
+`docs/arquitetura.md`, em Mermaid, legíveis só por quem abre o repositório e sabe o que
+procurar. A equipe pediu o contrário: um lugar simples, no próprio site, onde qualquer
+colega entenda os desenhos sem clonar nada. É a regra da casa nº 5 aplicada à própria
+arquitetura: documento de entrega é página, nunca arquivo para ir buscar.
+
+**Decisão.** Rota pública `/arquitetura`, no molde da `/transparencia-ia` (página própria,
+link no rodapé). Quatro blocos: a explicação do que é C4 em linguagem simples (quatro níveis
+de zoom, como um mapa); o desenho de contexto redesenhado na identidade do site (quem usa,
+o sistema, com quem conversa); o de contêineres, com o schema guardado em borda TRACEJADA e
+pílula "não ligado", porque desenho de arquitetura que esconde o que está desligado ensina
+errado; e o caminho de um número, reusando o componente de fluxo vertical da página inicial.
+Fecha com uma sanfona contendo o prompt completo que regenera os três diagramas em Mermaid
+em qualquer IA, com os fatos e as regras de honestidade embutidos.
+
+**Por que expor antes da Semana 5.** A matriz pede arquitetura na Semana 5, e o registro
+daquela semana continuará sendo a entrega formal. A página não fura o recorte do §6.3: os
+mesmos diagramas já eram públicos em `docs/arquitetura.md` num repositório aberto, e a
+página não contém conteúdo de ciclo (a varredura de vazamento passou a incluir a rota, e as
+checagens subiram de 94 para 122).
+
+**Consequência.** O prompt vive no código, não numa conversa perdida: quando a arquitetura
+mudar, o diff da página denuncia o desenho desatualizado. O custo aceito é manter dois
+formatos do mesmo desenho (a página e o Mermaid do docs); o teste de ponta a ponta da página
+e a nota de sincronia neste ADR são o lembrete.
+
+**Adendo (25/08).** A pedido da equipe, a página trocou de pele e cresceu: veste a pele do
+sistema (ADR-031), perdeu a aula sobre C4 (ficaram só os desenhos, com um eyebrow dizendo o
+nível), ganhou o quarto desenho, um diagrama de classes com os campos REAIS de
+`src/lib/calculo/tipos.ts` e as ligações entre as classes, e ganhou uma porta na página
+inicial (seção "Arquitetura", com chamada). O conteúdo mudou-se para
+`src/components/arquitetura.tsx`, compartilhado.
+
+**Segundo adendo (25/08).** Os níveis 1 e 2 deixaram de ser cartões empilhados e viraram
+DIAGRAMAS ESPACIAIS de verdade, com a gramática do C4 clássico de ferramenta: caixas
+espalhadas, o tipo entre colchetes ([pessoa], [sistema], [contêiner]), setas com rótulo,
+fronteira tracejada, cilindro para banco (tracejado para o guardado e desligado). São SVG
+renderizados no servidor (`src/components/arquitetura-c4.tsx`), com posições em constantes
+calculadas à mão, deliberadamente: motor de layout seria dependência e aleatoriedade. As
+cores saem dos tokens, então os dois temas funcionam; em tela estreita o desenho rola na
+horizontal, como toda tabela larga do site.
+
+---
+
+## ADR-033 · O CSS da casa entrou em camada, e um bug de três meses apareceu
+
+**Contexto.** Ao aplicar o acento na página de arquitetura, `border-2 border-acento` rendeu
+uma borda cinza. A investigação achou a causa em `globals.css`: a regra universal
+`* { border-color: var(--color-linha) }` estava FORA de qualquer `@layer`. Regra de cascata
+do CSS: estilo sem camada vence estilo em camada, não importa a especificidade. Como todos
+os utilitários do Tailwind vivem em camada, a regra universal vencia TODA utilidade de cor
+de borda do site, desde sempre: `border-acento`, `border-ok/40`, `border-alerta/40` e
+`border-transparent` nunca tiveram efeito, em lugar nenhum. O mesmo valia para `.rotulo` e
+`.pilula` engolindo `text-acento` e afins. Ninguém percebeu porque a hairline é discreta e
+o resultado parecia intenção, a mesma anatomia do bug do `--color-laranja` (ADR-027).
+
+**Decisão.** A regra universal de borda entrou em `@layer base`, e `.rotulo`/`.pilula` em
+`@layer components`. A ordem de camadas do Tailwind (theme, base, components, utilities)
+volta a valer como todo mundo já assumia: o padrão da casa vale até alguém escrever um
+utilitário por cima, e aí o utilitário vence. O bloco da pele do sistema (ADR-031) continua
+fora de camada DE PROPÓSITO, porque o papel dele é exatamente vencer utilitário; a diferença
+é que agora isso está escrito e é escolha, não acidente.
+
+**Consequência.** Utilidades escritas ao longo do semestre inteiro "ligaram" de uma vez:
+avisos de ok e alerta ganharam a borda tonalizada que o código sempre pediu, botões
+fantasma perderam a borda que nunca deveriam ter tido, e o acento voltou a poder contornar
+uma caixa. As 92 jornadas, os 459 testes e as 35 checagens de contraste passaram depois da
+mudança. Fica a lição, que agora é regra de revisão: CSS novo em `globals.css` nasce DENTRO
+de uma camada, a menos que vencer utilitário seja o objetivo declarado no comentário.
+
+---
+
+## ADR-034 · A reunião com o cliente remodelou o domínio, e o MVP acompanhou já
+
+**Contexto.** Em 22/08 a equipe teve a primeira conversa real com o representante do órgão
+(SECOGE/SESAU). Ela corrigiu o entendimento em quatro pontos que não são detalhe de tela:
+(1) o que se preenche é o SUBINDICADOR, valor direto ou numerador/denominador, e o
+indicador é calculado; (2) a régua depende do TIPO da unidade (USF, CAPS, UPA,
+policlínica): a depender do tipo, só alguns indicadores valem, e os pesos mudam; (3) a
+rede é secretaria → distrito sanitário → unidade, e o gerente distrital também é avaliado,
+pela agregação das unidades; (4) os atores são gerente de unidade, gerente distrital,
+administrador da plataforma e coordenação da SEAB. Veio ainda um pedido novo: janela de
+revisão de cinco dias no fim do mês, com histórico. A ata sintetizada está na Semana 3 do
+registro, sem nomes de pessoa.
+
+**Decisão.** Remodelar o núcleo agora, em vez de acumular semanas sobre o modelo antigo.
+`Area` deu lugar a `Distrito`/`TipoUnidade`/`Unidade`; `Gestor` virou `Gerente` com
+escopo; `Indicador` perdeu meta e peso próprios e ganhou `Subindicador`; a APLICABILIDADE
+(tipo × indicador → meta e peso) mora na regra versionada, porque "muda de ano em ano" é
+exatamente o que regra versionada resolve; o ciclo ganhou `revisaoInicio` como PERÍODO
+dentro do lançamento aberto, sem sexto estado. O motor compõe o indicador pela média
+simples dos subindicadores apurados e calcula o distrital como média das unidades — as
+duas fórmulas são SUPOSIÇÕES declaradas, a validar com a planilha prometida; se vierem
+diferentes, viram versão nova da regra, não reescrita. Os quatro perfis do sistema
+passaram a ser os do cliente; o perfil "auditoria" saiu e a TELA de trilha ficou com o
+administrador e a SEAB, porque fiscalizar virou capacidade de papel existente, não papel
+próprio, até o cliente dizer o contrário.
+
+**Consequência.** Duas dívidas declaradas, com dono e data: o schema PostgreSQL guardado
+segue no domínio anterior (a semeadura usa a fotografia congelada de
+`src/lib/dados/dominio-v1.ts`; pendência em `banco.md`) e os modelos de ML seguem
+treinados no recorte antigo, com aviso na própria tela de analytics e re-treino no marco
+"ML: entrega parcial" do cronograma. Renomear os ids de perfil invalida cookies antigos do
+seletor simulado, que caem no padrão sem erro. O custo de remodelar cedo foi um fim de
+semana de refatoração; o custo de adiar seria pago com juros a cada tela nova.
+
+## ADR-035 · A régua oficial chegou, e o pitch virou uma rota do site
+
+**Contexto.** Em 05/09 o órgão enviou dois arquivos: o Diário Oficial de 21/09/2024 com a
+Portaria Conjunta nº 001/2024, que regulamenta a gratificação, e uma planilha anonimizada de
+um ciclo real, para a equipe conferir a régua. Sete dias antes do Kick-off, o roteiro do pitch
+que existia no registro estava escrito no vocabulário anterior à ADR-034, e o briefing do
+pitch trazia afirmações que o repositório não sustentava: que a comissão "não existe mais",
+que o ML usa fonte pública, que há um registro de riscos numerado, que as personas têm nome.
+
+**Decisão.** Três coisas, na ordem em que custam menos para desfazer. (1) A portaria entra no
+repositório, transcrita em `docs/portaria-001-2024.md`, porque é ato público; a planilha NÃO
+entra, porque tem gente, mesmo com o nome trocado, e o repositório é público. Ela fica como
+referência privada da equipe. Os nomes dos membros da comissão, publicados nas portarias nº
+002 e nº 003 do mesmo Diário, também ficaram fora. (2) O pitch é conteúdo do projeto e vive
+onde o conteúdo vive: `src/content/pitch.ts` é a fonte única (slides, tempos, quem fala,
+notas), a rota `/pitch` renderiza os nove slides e o registro do ciclo `ko` mostra a mesma
+tabela. É a primeira rota protegida por ciclo, e não por funcionalidade: `podeVer(visao,
+'ko')` decide, e oculto é 404, como nas telas. O deck é aprimoramento progressivo: sem
+JavaScript é uma pilha imprimível; com JavaScript, o segundo componente cliente do projeto
+mostra um slide por vez e escuta o teclado, recebendo só o total de slides, nunca texto, para
+nada do Kick-off chegar ao bundle antes da hora. A demonstração do slide 4 é o componente real
+da memória de cálculo, com o motor real, e uma captura estática de reserva no mesmo slide.
+O PDF e as capturas saem da própria rota, por Playwright, na identidade do site. (3) O motor
+não muda agora. A portaria confirma o núcleo do modelo (subindicadores com fórmula, régua por
+tipo de unidade, nota do distrito como média das unidades) e diverge em dois pontos: manda
+tirar a média das NOTAS dos subindicadores, cada uma já graduada, onde o motor tira a média dos
+valores e gradua depois; e o art. 8º manda desconsiderar o que não pôde ser aferido e
+REDISTRIBUIR o peso, onde o seed usa `zera_com_aviso`. As duas viram `regra-v3` na Semana 5,
+com o prazo de recurso do art. 9º, e o slide 7 diz isso em voz alta, porque honestidade no
+palco vale mais do que um motor remendado a sete dias do pitch.
+
+**Consequência.** Uma bomba-relógio desarmada de passagem: `scripts/verificar-vazamento.ts`
+testava `perfis.includes('cam')`, perfil extinto na ADR-034, e a comparação era sempre falsa;
+quando a s5 fosse liberada (12/09, pelo adiantamento de sete dias), três telas responderiam
+3xx onde o script exigia 404 e o `npm run verificar` quebraria no dia do Kick-off.
+`PERFIL_PADRAO` passou a morar em `features.ts`, que Node puro consegue importar. Cada número
+dito no pitch é conferido por teste contra o arquivo de onde vem, para o número da tela e o
+número do repositório não se separarem. As 39 linhas de `docs/uso-de-ia.md` que estavam
+pendentes foram assinadas por quem as validou. E o nome de cada integrante aparece no pitch
+como quem fala, nunca como quem construiu: a equipe construiu.
+
+## ADR-036 · O deck ficou usável: teclado que sobrevive ao clique, tela que cabe, texto que a fala carrega
+
+**Contexto.** O deck do Kick-off subiu no dia 09/09 e foi usado de verdade no dia seguinte. O
+uso derrubou quatro coisas que os testes não pegavam. **A seta não passava o slide:** o guard
+de teclado ignorava a tecla sempre que o foco estivesse num `button`, `a` ou `summary`, e
+como quem apresenta clica, o primeiro clique na seta da tela, no botão de tema ou na memória
+de cálculo desligava setas, notas, tela cheia e cronômetro até alguém clicar no fundo da
+página. O script que gera o PDF navega sem nunca clicar, então a suíte inteira passava por
+cima do defeito. **O slide da demonstração mostrava 38% do que tinha:** 1008px de conteúdo
+numa caixa de 384px, com a tabela e a linha `(104) ÷ (12 × 10) × 100 = 86.67` abaixo da linha
+d'água, num slide chamado "a nota com a conta aberta". **A tela tinha 1.127 palavras** para
+4:55 de fala, e a auditoria mostrou que quase todas eram a nota do apresentador transcrita: as
+três personas repetiam as notas quase palavra por palavra, e o slide dos marcos dizia a mesma
+coisa três vezes. **E não havia caminho até o pitch:** o único link vivia dentro de uma
+sanfona fechada, três rolagens abaixo da dobra.
+
+**Decisão.** Cinco mudanças, cada uma com a sua rede.
+
+A regra do teclado saiu do `useEffect` e virou `src/components/pitch/teclado.ts`, função pura
+sobre a tecla e o elemento em foco, com tabela de testes: só campo de texto engole tecla, a
+barra de espaço respeita o controle focado (senão daria dois passos numa tecla só) e os botões
+devolvem o foco ao corpo, mas só no clique de mouse, para não roubar o lugar de quem navega
+com Tab.
+
+O texto de tela virou dado em `src/content/pitch.ts`, com teto de palavras por slide imposto
+em teste. O componente escolhe a forma do visual; as palavras vêm do conteúdo, e um segundo
+teste falha se alguém escrever prosa dentro do JSX. Passou de 1.127 para menos de 400 palavras.
+O que saiu da tela não sumiu: já estava nas notas.
+
+A demonstração passou a caber, copiando o que a folha de impressão já fazia certo: esconde o
+que a fala cobre e reduz a escala. `zoom` e não `transform: scale`, porque zoom participa do
+layout e a caixa encolhe de verdade. O `overflow` continua ali como rede, para o navegador que
+ignora `zoom` e para o dia em que a memória ganhar uma linha, e há teste de ponta a ponta
+provando que, no caminho normal, nem a caixa nem a página rolam em 1280x720 e em 1366x768.
+
+O topo do site ganhou um botão para `/pitch` **com prazo**: dez dias depois do Kick-off ele
+some sozinho, por uma função pura que lê a data do cronograma. O começo da janela é o próprio
+portão do ciclo, senão o botão apontaria para um 404. Destaque sem prazo vira entulho, e
+ninguém lembra de tirar. No celular ele fica só com o ícone, porque com a palavra o cabeçalho
+estourava 360px.
+
+**E o PDF virou rota, não arquivo.** Aqui a decisão foi contra a saída mais fácil. Gravar
+`public/pitch-kickoff.pdf` era uma linha e entregava o download sem risco de runtime, mas
+`public/` não passa por `obterVisao()`: o deck inteiro, num arquivo só, responderia 200 nos
+dias em que `/pitch` responde 404. Descobrimos que **as nove capturas já faziam exatamente
+isso** desde que existiam. Então as capturas voltaram para `docs/`, o PDF é servido por
+`/pitch/pdf` com o mesmo portão da página, e o verificador de vazamento passou a provar as
+duas coisas, além de varrer o bundle atrás de qualquer frase de slide, e não só do título.
+
+**Consequência.** O custo honesto da rota é que ela lê o arquivo do disco em tempo de
+execução, e o rastreador da Vercel não enxerga `readFile(join(process.cwd(), ...))`: sem a
+linha em `outputFileTracingIncludes`, funciona no repositório e devolve 404 no deploy. Um
+teste confere que a linha existe, e a falha degrada para 404, nunca para erro de servidor. A
+mesma linha cobriu `docs/*.md`, que `/transparencia-ia` já lia daquele jeito havia semanas sem
+ninguém ter notado o risco. De quebra, dois defeitos velhos caíram: a pílula "esta semana"
+nunca aparecia nas semanas imprensadas, o que deixava a suíte vermelha de 05/09 a 11/09 e
+teria voltado ao verde sozinha no sábado, escondendo o problema; e a linha de ajuda das teclas
+aparecia justamente para quem estava sem JavaScript, anunciando quatro atalhos mortos.
+
+## ADR-037 · O deck ganhou movimento, e cada animação conta uma parte da história
+
+**Contexto.** Depois do corte de texto, os slides ficaram claros e parados. Um pitch de cinco
+minutos disputa atenção com seis pessoas falando, e tela parada não segura ninguém. O pedido
+foi direto: mais visual, mais vivo.
+
+**Decisão.** Cinco animações, e nenhuma decorativa. O slide ativo entra de baixo, e o conteúdo
+dele entra em cascata na ordem da leitura: título, frase, depois os cartões, um por vez. Os
+números grandes caem no lugar como um contador mecânico parando, com uma hairline se
+desenhando embaixo. No slide do problema, um ponto percorre o caminho do dinheiro e **trava**
+na etapa da planilha, batendo ali para sempre: é a única animação em laço, porque ela é o
+argumento. No slide das três pessoas, o número que elas veem aparece gigante atrás dos
+cartões, e ele não é enfeite: é o valor que o motor calcula, lido da mesma avaliação que a
+demonstração abre dois slides depois. A plateia reencontra o número e aí ele se explica. Uma
+barra fina no topo mostra a posição no deck, em cinza, porque posição não precisa de cor e o
+acento já está gasto.
+
+Nenhuma animação toca layout: só opacidade e transformação. Isso não é preciosismo. A página
+não pode crescer, senão o slide volta a rolar, e existe teste medindo isso; o modo deck ganhou
+`overflow: hidden` como guarda. Quem pede menos movimento no sistema recebe a tela pronta. E o
+papel também: o bloco de impressão desliga tudo e força o estado final, com uma exceção
+declarada para o número gigante, cuja posição É uma transformação e que sem ela cai para fora
+da página.
+
+**Consequência.** As capturas quebraram na primeira tentativa: o script fotografava 150ms
+depois de navegar, no meio da cascata, e saíam cartões invisíveis. `scripts/pitch-pdf.ts`
+passou a injetar uma folha que zera durações antes de fotografar, e a parar o ponto viajante
+onde ele trava, que é o quadro que a imagem precisa mostrar. O teste que proíbe texto de
+autor dentro do componente também precisou aprender a ignorar comentário: documentar uma
+decisão estava deixando a suíte vermelha, e o remédio para isso seria parar de documentar.
+
+## ADR-038 · A capa e o fechamento ganharam uma xilogravura, no traço de J. Borges
+
+**Contexto.** O pedido foi trazer identidade visual de Pernambuco para a apresentação: cacto,
+sol, e um mapa. A referência escolhida depois foi J. Borges, o xilogravador de Bezerros.
+
+**Decisão sobre a geografia, antes da arte.** O cliente é a Secretaria de Saúde do **Recife**,
+prefeitura. Não é governo do estado e não é federal, então mapa do Brasil estaria errado e
+mapa de Pernambuco inteiro seria largo demais para um cliente municipal. Cacto sozinho
+também não serve: mandacaru é iconografia do sertão, e o Recife é maré, mangue e ponte. A
+cena escolhida mostra o estado sem escolher um lado: o sol e o mandacaru do sertão, o casario
+e a água da cidade. Nenhum mapa, porque desenhar um contorno de memória seria inventar
+geografia num projeto que trata invenção como defeito.
+
+**Decisão sobre o traço.** O resto do site é hairline de 1px, e xilogravura não tem fio fino:
+é mancha cheia, corte branco por dentro da mancha e hachura paralela no lugar de sombra. A
+regra do traço muda de propósito nesta peça, e só nela. O que NÃO muda é a paleta: a tinta é
+`--color-linha-alta`, o corte é a cor do fundo, e o acento aparece uma vez, no disco do sol,
+respeitando o orçamento de cor da casa. É SVG escrito à mão, sem texto dentro, então a
+estampa não entra na conta de palavras do slide nem é anunciada por leitor de tela.
+
+**Consequência.** A faixa aparece na capa e no fechamento, atrás do conteúdo, e o canto
+esquerdo dela fica deliberadamente vazio: é onde moram o nome do produto, o cliente e a
+assinatura da instituição. Estampa que cobre assinatura deixa de ser estampa, e a primeira
+versão cobria as duas. A cena também é larga (1600 por 250) para que, ocupando a largura
+toda, ela fique com um terço da altura do slide em vez de metade. No papel ela é mantida, com
+a mesma exceção que o número gigante já tinha no bloco de impressão.
+
+
+## ADR-039 · O briefing oficial do Kick-off chegou, e o deck dobrou de tamanho
+
+**Contexto.** Na véspera da apresentação, o professor divulgou o briefing do Kick-off. Ele
+traz três coisas que o projeto não conhecia: **sete critérios de avaliação**, uma **estrutura
+mínima de oito seções** para o site da equipe e um **checklist final de dez itens**. Uma
+auditoria do deck e do site contra esse documento devolveu um diagnóstico desconfortável: o
+material existia quase todo, e quase nada dele aparecia onde é avaliado. Personas, SWOT,
+benchmarking e ideação estavam escritos e publicados, soterrados a dois cliques dentro da
+sanfona da semana, sem nenhum link do site apontando para eles, e nenhum dos quatro aparecia
+em slide algum. Três peças não existiam em lugar nenhum: **objetivo geral e específicos**,
+**matriz CSD** e **wireframes de baixa fidelidade**.
+
+**Decisão 1: crescer o deck em vez de cortar.** A diretriz escrita dá cinco minutos mais
+cinco para terminar, e o deck fechava em 4:55. O professor liberou até dez. Com essa
+permissão, cobrir os sete critérios custa menos que escolher quais perder. O deck foi de nove
+para dezessete slides e de 4:55 para 9:00, com um minuto de margem: ensaio que fecha
+exatamente no limite estoura no dia. Os oito slides novos são exatamente os critérios que
+faltavam: o roteiro, as fontes da pesquisa, os objetivos, a matriz CSD, benchmarking com
+SWOT, as técnicas de ideação, a justificativa da escolha, os wireframes e o cronograma com
+responsável.
+
+**O teto de palavras por slide NÃO subiu.** Continua em setenta, imposto em teste. Mais
+slides, não mais texto por slide: dobrar o deck e afrouxar o teto ao mesmo tempo devolveria o
+teleprompter que a ADR-036 tirou. A faixa de fala por integrante subiu de 30 a 90 para 30 a
+130 segundos, porque nove minutos entre seis pessoas dá noventa de média, e o que o teste
+precisa impedir é alguém sumir da apresentação ou tomar conta dela.
+
+**Decisão 2: datar a CSD e os wireframes nesta semana, e dizer isso.** Os dois artefatos não
+existiam. Escrevê-los dentro da Semana 2 e da Semana 3 deixaria o registro mais bonito e
+menos verdadeiro, e o site inteiro vale exatamente pelo que ele registra. Eles entram como
+documentos do ciclo `ko`, e cada um abre dizendo em que semana foi produzido. O documento dos
+wireframes vai além e reconhece a dívida: a Semana 3 prometeu "primeiras telas em papel" como
+produto do Crazy 8's e o artefato nunca foi publicado.
+
+**Decisão 3: as análises viraram dado.** Benchmarking, SWOT, as três técnicas, as oito
+alternativas, as razões da escolha e o mapa de empatia saíram do JSX dos ciclos e foram para
+`src/content/analises.ts`, junto com a matriz CSD. O motivo é o de sempre: agora o slide e o
+documento mostram a mesma coisa, e duas cópias divergem na primeira correção. Cada item da
+CSD carrega a `fonte` que o sustenta, porque é isso que separa uma matriz CSD de uma lista de
+opiniões: certeza sem origem é chute com voz firme.
+
+**Decisão 4: o índice das oito seções mora na página, não no cabeçalho.** O cabeçalho foi
+desenhado para três destinos e estoura a largura de 360px com oito, que é a régua do teste.
+Mas o motivo bom é outro: uma lista numerada na página é também **ordem de leitura**, e é isso
+que serve a quem abre o site para avaliar. Um menu diz onde ir; o índice diz por onde começar,
+na numeração do próprio briefing, de 01 a 08.
+
+**Decisão 5: a biblioteca aponta, não duplica.** A seção de documentos lista todo documento
+publicado com link para a âncora `#doc-<ciclo>-<id>` que já existia desde sempre e que nenhum
+link do site usava. As seções temáticas de usuário, solução e processo também apontam, em vez
+de repetir: conteúdo duplicado é conteúdo que diverge.
+
+**Decisão 6: o cronograma público sai do painel com senha.** Atividades e prazos estavam em
+`src/lib/cronograma.ts`, estado e responsável em `src/content/checklist.ts`, e
+`montarChecklist()` já juntava os dois há semanas. O único consumidor era o painel
+administrativo, ou seja: o professor não via nada disso. A seção nova mostra uma linha por
+semana, e não por evidência, porque com 69 evidências a tabela vira planilha, que é
+exatamente o que este projeto existe para não ser. Semana ainda não liberada aparece com o
+**plano**, nunca com o registro: o calendário da disciplina é público, o texto do que
+aconteceu é que passa pelo release.
+
+**Consequência, e o que a auditoria deixou anotado.** Três incoerências do registro foram
+corrigidas de passagem, todas do tipo que a banca acha em dois cliques: o checklist marcava
+como "feito" o registro das três dinâmicas de ideação que a própria Semana 3 declara
+pendente; duas evidências da Semana 4 não tinham estado declarado e caíam em "a fazer" em
+silêncio, uma delas sendo o cronograma de execução, item nomeado pelo professor; e os links
+do checklist apontavam para a semana, não para o documento. Fica em aberto um item do
+checklist do professor: a apresentação salva na pasta do Drive da equipe, referenciada no
+site. A variável está prevista no código e vazia; sem a URL da pasta, o site não mostra link
+nenhum.
+
+## ADR-040 · O texto do site passou a ser escrito para quem lê na hora
+
+**Contexto.** Na véspera do Kick-off, o dono do projeto leu o registro da Semana 5 e
+devolveu: "linguagem de máquina, longo demais, tá tudo igual, e até agora eu não entendi o que
+esse projeto faz". Ele tem razão nas quatro. O site foi escrito como folha de especificação,
+e folha de especificação é lida por quem já sabe do que se trata. Quem lê o registro é um
+professor com dezoito projetos para avaliar e seis estudantes que, no meio de uma arguição,
+vão abrir o site para responder uma pergunta sobre uma parte que não construíram. Texto que
+exige contexto prévio é texto que falha exatamente na hora em que é lido.
+
+**Decisão 1: "o que é isso" antes de qualquer outra coisa.** Três frases logo abaixo do
+título, em `src/content/produto.ts`: quem paga, o que está quebrado, o que o Prumo faz. Se um
+visitante ler só isso, ele entendeu. O site inteiro explicava método e arquitetura sem nunca
+dizer isso.
+
+**Decisão 2: uma cartilha de escrita, aplicada a todo o conteúdo dos ciclos.** Frase de até
+quinze palavras. Uma ideia por frase. Nada de lista dentro de frase. Palavra técnica só se a
+própria frase explicar o que ela é; senão, a palavra comum: "item medido" no lugar de
+"subindicador", "histórico de quem mudou o quê" no lugar de "trilha de auditoria", "a regra
+guardada com número de versão" no lugar de "regra versionada". Primeira pessoa do plural é
+bem-vinda: é um diário de equipe, e gente escreve "fechamos", "decidimos". A regra de ouro da
+reescrita: muda como está dito, nunca o que está dito. Todo número, data, nome, id, URL e
+artigo continua exatamente igual, e nenhum fato é acrescentado. Cada arquivo passou por um
+redator e por um conferente que abriu o diff e checou fato a fato.
+
+**Decisão 3: hierarquia visual no cartão da semana.** Os rótulos dos oito blocos ficaram
+maiores e mais pesados. Cada decisão ganhou título de verdade, com o porquê embaixo atrás de
+uma linha, e espaço entre uma e outra. Os itens dos avanços ganharam respiro. Sem cor nova:
+o laranja já está no limite da regra 11, então a hierarquia vem de tamanho, peso e espaço.
+
+**Decisão 4: material de preparação não é entrega.** "Roteiro do pitch" e "Perguntas
+prováveis da banca" estavam publicados como documentos do Kick-off, ao lado da portaria e da
+matriz CSD. Saíram do site. As perguntas foram para `docs/perguntas-da-banca.md`, conferidas
+uma a uma contra o repositório, e o roteiro continua em `docs/pitch-kickoff.md`. O site
+mostra o que a equipe entregou; o que a equipe usa para se preparar fica no repositório.
+
+**Consequência.** A regra de escrita passa a valer para todo texto novo de ciclo, e o
+comentário de cabeçalho de `src/content/produto.ts` aponta para esta ADR. O que NÃO mudou:
+os slides já seguiam a mesma regra desde a ADR-036, com teto de palavras e lista de palavras
+proibidas em teste. Faltava aplicar ao site o que o deck já cumpria.
+
+## ADR-041 · A regra v3 nasce da planilha do cliente, e as anteriores continuam de pé
+
+**Contexto.** A Secretaria enviou, em 22/09, uma versão anonimizada da planilha que usa hoje.
+Lidas as fórmulas, três coisas que a equipe tinha assumido estavam erradas: a média é das
+**notas** dos subindicadores, não dos valores; indicador sem lançamento **sai da conta e leva o
+peso junto** (art. 8º), em vez de zerar; e a nota é de 0 a 1, não de 0 a 10. A planilha ainda
+mostrou duas coisas que não estavam em lista de dúvida nenhuma: existe subindicador em que
+passar do alvo também perde ponto, e numerador maior que denominador é marcado como ERRO.
+
+**Decisão.** Publicar a `regra-v3` em vez de corrigir o motor. `RegraDePontuacao` ganha
+`metodo`, `graduacoes` e `segundaGraduacao`, todos opcionais; ausentes querem dizer o método
+antigo, então as regras v1 e v2 continuam no arquivo, sem uma vírgula alterada, e os meses que
+fecharam sob elas devolvem os mesmos números. A terceira direção (`faixa_ideal`) não precisou
+de campo novo no cálculo: ela é uma lista de degraus não monótona, e a ordem da lista resolve.
+
+**Consequência.** O motor passou a ter dois caminhos, e isso é dívida real: quem mexer nele
+precisa conferir os dois. Em troca, a promessa central do produto ficou demonstrável em vez de
+prometida, porque a primeira mudança grande de regra aconteceu sem tocar em resultado
+publicado. A checagem de numerador maior que denominador ficou **condicionada à regra** pelo
+mesmo motivo: ligá-la para todos mudaria mês homologado, e um lançamento malformado antigo
+continua valendo o que valia no dia em que foi publicado.
+
+**O que se perdeu.** O método de atingimento fica no código para sempre, mesmo que nenhuma
+regra nova volte a usá-lo. Apagá-lo seria apagar a capacidade de recalcular 2026.
+
+## ADR-042 · Os tipos de unidade passam a ser os da portaria, e as regras antigas são re-chaveadas
+
+**Contexto.** O catálogo tinha quatro tipos: USF, CAPS, UPA e Policlínica. Os dois últimos
+**não existem na portaria**, que nomeia USF, UBT, UBT Mista, CAPS, CECON, UCIS e MAC. A
+planilha confirmou os sete, e ainda mostrou que eles têm porte (USF 1 a 8, MAC 1 a 4, CAPS II
+ou III e CAPS III 24h).
+
+**Decisão.** Corrigir a lista de tipos e remapear as doze unidades sintéticas. As regras v1 e
+v2 apontavam para `upa` e `poli`, tipos que deixaram de existir: em vez de reescrevê-las ou de
+deixar quatro unidades sem aplicabilidade nenhuma nos meses publicados, elas são
+**re-chaveadas** por `TIPO_ANTIGO_VIROU`, que diz de que tipo novo cada tipo antigo virou.
+Mesma meta, mesmo peso, nome do tipo corrigido. Um tipo antigo vira dois quando as unidades
+dele foram para lugares diferentes.
+
+**Consequência.** Nenhuma unidade perde nota em mês publicado. O `id` de cada unidade continua
+o antigo (`upa-andorinha` hoje é a UBT Andorinha), porque ele aparece em URL, teste e documento
+de ciclo, e trocá-lo custaria muito para não mudar nada que o visitante veja.
+
+**O que se perdeu.** O porte ficou de fora, declarado em comentário em vez de escondido: ele
+multiplica a régua por oito na USF e não muda a forma do motor. E o schema guardado em
+`supabase/migrations/` ainda tem `cam` no enum de perfil, onde o aplicativo já diz `seab` desde
+a ADR-034. O schema não está no caminho de execução, então a divergência não quebra nada, mas
+ela existe e está registrada aqui em vez de ser descoberta depois.
+
+## ADR-043 · A lente de ML vive só nos cadernos, sobre a planilha por unidade
+
+**Contexto.** `ml/` tinha três módulos Python (gerador, modelos, exportador) e seis cadernos
+que só chamavam funções deles. O código de verdade ficava fora do lugar em que a disciplina o
+lê, e a base era sintética, sobre "áreas técnicas" que deixaram de existir na ADR-034.
+
+**Decisão.** Os módulos saem e todo o código entra nos cadernos, sem importação de arquivo
+local. A base passa a ser `ml/data/base nova completa.csv`, uma linha por unidade. O caderno 02
+escreve a tabela limpa em `ml/saidas/`, os cadernos 03 a 05 escrevem um JSON cada, e o 06 junta
+os três em `src/content/ml/resultados.json`, com o mesmo contrato que a tela já lia (ADR-022).
+A classificação compara XGBoost, LightGBM, CatBoost e o stacking dos três (regressão logística
+como metamodelo), cada um com grid search, e fica com o de maior F1 na validação cruzada; a
+regressão é só XGBoost, também com grid search. A separação temporal e a pergunta de tendência
+saem, porque a base nova é um retrato de um ciclo, não uma série.
+
+**Consequência.** A classificação e a regressão têm métrica alta porque o resultado geral é
+uma soma ponderada das mesmas notas, e os cadernos dizem isso em vez de vender previsão. A
+limpeza achou seis linhas de NDI e SAE que seguem outra conta: o resultado lançado é a soma dos
+pontos dividida por 1,7, e em cinco delas a planilha soma o indicador 3 com peso 80% em vez de
+20% (caderno 07, `linhas_fora_da_regra`); elas saem da modelagem. O slide 14 do Kick-off
+deixou de ler o JSON e guarda os números que mostrou naquele dia, para não passar a
+contradizer a própria frase.
+
+**O que se perdeu.** O vínculo com `src/lib/seed/`: o cálculo do app e a lente de ML agora
+falam de bases diferentes.
+
+## ADR-044 · Dado institucional da SESAU entra com autorização; dado de pessoa não entra nunca
+
+**Contexto.** A regra 1 da casa dizia "nenhum dado real de pessoa **ou da SESAU**", e foi
+escrita quando a equipe não tinha acesso a nada e precisava de uma linha simples de recusar.
+Depois a Secretaria enviou a planilha anonimizada, a lente de ML passou a trabalhar sobre a
+base de desempenho por unidade (ADR-043), e o arquivo foi para `ml/data/`. A regra e o
+repositório passaram a discordar, e uma regra que o próprio repositório desobedece deixa de
+ser regra: o próximo agente apagaria o arquivo achando que corrigia uma violação.
+
+**Decisão.** Separar as duas coisas que a regra tratava como uma. Dado que identifica pessoa
+(CPF, nome, matrícula, e-mail, telefone) continua proibido em qualquer lugar, e isso não é
+negociável com o cliente porque não depende dele: é o art. 20 da LGPD. Dado institucional
+(unidade, distrito, indicador, número) entra mediante autorização da Secretaria, que foi dada
+e está registrada aqui.
+
+**Consequência.** O seed de `src/lib/seed/` continua sintético, porque ele alimenta o site
+público e a autorização não se estende a ele. A fronteira nova ganhou teste próprio em
+`src/lib/dados-do-cliente.test.ts`, que varre `ml/data/` inteiro linha a linha: 825 mil linhas,
+cerca de cinco segundos no `npm test`. É caro para um teste e barato para a única coisa deste
+repositório que não pode falhar em silêncio.
+
+**O que se perdeu.** O `npm test` ficou cinco segundos mais lento, e a regra 1 deixou de caber
+em duas linhas. Em troca, ela passou a descrever o que o repositório realmente faz. A primeira
+versão do teste procurava telefone com um padrão frouxo e acusou 824.782 das 825.029 linhas,
+porque num CSV de números quase toda coluna decimal casa: padrão que acusa tudo não acusa nada.
+Os padrões ficaram estreitos, e o reforço veio do cabeçalho, que reprova o arquivo por uma
+coluna chamada "nome" mesmo que nenhuma linha case.
+
+## ADR-045 · O SR1 ganhou deck próprio, e o site passou a escolher a apresentação do marco
+
+**Contexto.** O único deck do projeto era o do Kick-off, em `/pitch`, e tudo em volta sabia
+disso: o atalho do topo, o bloco "a entrega da vez" e o script do PDF. Dez dias depois do
+Kick-off o atalho sumia, como planejado, e o site passava a não oferecer apresentação nenhuma
+justamente na semana de preparar a próxima. O roteiro do SR1 existia só como tabela num
+documento da Semana 6, o que a ADR-040 já tinha tirado do site para o Kick-off (material de
+preparação não é entrega). E o tempo do SR1 não está confirmado: a diretriz escrita do
+Kick-off dizia cinco minutos, e o professor liberou dez.
+
+**Decisão.** O SR1 tem o mesmo desenho do Kick-off e da AV1 de ML: o texto mora em
+`src/content/apresentacao-sr1.ts`, os slides em `src/components/sr1/slides.tsx`, a rota `/sr1`
+e o PDF `/sr1/pdf` são fechados pelo ciclo `sr1`, e `npm run roteiro` gera
+`docs/pitch-sr1.md`. Três coisas são novas:
+
+1. **Duas versões no mesmo deck.** `/sr1` fecha em 9:00; `/sr1?versao=curta` fecha em 4:55 com
+   os slides marcados com `curto`, e cada um diz só as primeiras linhas da fala. Não é outro
+   arquivo: trocar de versão na hora não pode depender de alguém lembrar de atualizar dois.
+2. **Nenhum número digitado.** A nota de maio pela v2, a de maio pela v3 e a de junho pela v3
+   saem do motor de cálculo na hora de montar o slide, inclusive dentro da fala. O funil da
+   planilha vem do JSON do caderno 07, os modelos do caderno 06, as contagens de segurança de
+   `CONTAGENS_PITCH`, conferidas contra `docs/seguranca.md`.
+3. **Os sete falam.** No Kick-off a fala era só de quem estava desde agosto. Agora o teste
+   exige a equipe inteira, entre 30 e 130 segundos por pessoa, nas duas versões, e que a fala
+   de cada slide caiba no tempo dele a 2,6 palavras por segundo.
+
+O atalho do topo e a entrega da vez passam a perguntar a `src/lib/decks.ts` qual deck
+oferecer: o do marco mais recente que o visitante já vê, dentro da mesma janela de dez dias.
+
+**Consequência.** Em dezembro, o SR2 entra com uma linha em `DECKS_DOS_MARCOS` e um arquivo de
+conteúdo. O deck presta contas dos três compromissos do Kick-off com o estado real, inclusive o
+que não foi feito, e a correção de rota tem slide próprio.
+
+**O que se perdeu.** O slide da demonstração continua mostrando a interface do sistema com
+ponto decimal (70.00) enquanto o resto do deck escreve 70,00. É a tela real, e trocar a
+formatação dela é trabalho das telas, não do deck.
+
+## ADR-046 · Para o SR1: as oito telas no ar, cada visitante escreve na própria cópia, e junho fecha pela v3
+
+**Contexto.** A banca do SR1 pode navegar o sistema sozinha, e três coisas atrapalhavam. Quatro
+das oito telas (trilha, gestão, analytics e contestação) já existiam e estavam testadas, mas só
+abririam entre a Semana 7 e a 11. A escrita do protótipo morava em variáveis de módulo em
+`src/lib/sistema/estado.ts`: o lançamento de um avaliador aparecia na tela do outro, e um avanço
+de ciclo mudava o mês de todo mundo. E nenhuma nota pela regra v3 existia para quem visita: junho,
+o único mês da v3, estava em lançamento aberto, e a base só calcula nota de mês fechado.
+
+**Decisão.**
+
+1. **As telas, não os registros.** O `ciclo` das quatro telas passou para `s6` em
+   `src/lib/features.ts`. Os registros de s7 em diante continuam no calendário: abri-los por
+   trava ou vitrine publicaria semanas futuras escritas no passado. O teste de ponta a ponta do
+   portão passou a medir na véspera da última leva de telas, calculada do cronograma, porque
+   hoje nenhuma rota de tela está fechada.
+2. **Uma cópia por visitante.** O cookie `prumo_visitante` (um `crypto.randomUUID()`, httpOnly,
+   sem assinatura, porque não dá privilégio nenhum) identifica a cópia. `estadoDo(visitante)`
+   soma a base congelada à cópia dele, que guarda lançamentos, eventos, estados de ciclo,
+   avaliações e contestações. Só as três rotas de escrita criam o cookie; ler não cria cópia.
+   Tetos: 100 visitantes (sai a cópia usada há mais tempo) e 200 registros por cópia. O avanço
+   de ciclo continua exigindo sessão de admin e fica na cópia de quem avançou. O contrato de
+   `src/lib/dados/` não mudou. A tela diz, no topo do sistema, que o que se lança ali fica só
+   na sessão de teste.
+3. **Junho fechado, julho aberto.** Julho entrou no FIM da lista de meses do gerador, e a onda
+   sazonal ficou fixa em seis meses em vez de seguir o tamanho da lista: assim janeiro a maio
+   saem idênticos, lançamento a lançamento, e há teste que fixa maio das doze unidades. Junho
+   passou a ser gerado como mês fechado pela v3. O slide 14 do Kick-off, que contava os meses da
+   base, ficou congelado em seis (`MESES_NA_BASE_NO_KICKOFF`), como o modelo do mesmo slide.
+4. **A recusa entra no histórico.** A tela dizia que uma tentativa fora do prazo ficava
+   registrada, e não ficava. Agora existe o evento `lancamento_recusado`, com teste.
+
+**Consequência.** A banca vê as oito telas, uma nota pela v3 (junho da USF Canário) sem
+depender de ninguém, e a demonstração de quem apresenta não muda a tela de quem assiste. A
+descrição da v3 passou de "conferida contra a planilha" para "escrita a partir das fórmulas":
+nenhuma linha real foi recalculada pelo motor ainda, e dizer "conferida" seria antecipar o
+compromisso que o Kick-off prometeu e não cumpriu.
+
+**O que se perdeu.** A cópia vive na memória de uma instância. Na Vercel, duas requisições em
+instâncias diferentes podem não enxergar a mesma cópia: já era assim antes, só que agora a perda
+é de um visitante e não de todos. O enum `tipo_evento` do schema guardado em
+`supabase/migrations/` não tem `lancamento_recusado`, mais uma divergência declarada de um
+schema que continua desligado do app. E junho mudou de números: ele nunca tinha sido publicado,
+mas quem guardou o 70 da auditoria de 24/09 vai encontrar 75.
+
+## ADR-047 · As orientações do SR1 chegaram, e o deck passou a seguir a rubrica
+
+**Contexto.** Em 28/09 chegaram as orientações oficiais do SR1. A apresentação tem até 15
+minutos e é interrompida no limite. Os slides vão em PPT ou PDF, salvos no Drive da equipe, e
+cada um é numerado como atual/total. São sete critérios com pontos: imersão 1,75, ideação 1,75,
+proposta de solução 2, metodologia e processo 1,5, planejado x realizado 1, pontos fortes e
+melhorias 0,5 e apresentação 1,5. Cada critério traz a lista do que mostrar. O deck de 24/09
+(ADR-045) foi montado antes delas: 16 slides em 9:00. De propósito, ele deixava de fora
+personas, SWOT, ideação e wireframes, porque o Kick-off já os tinha mostrado. Também não tinha
+metodologia, papéis, ferramentas, a organização do site e do Drive nem o percentual de avanço.
+Pela rubrica, essas ausências custavam ponto em quatro dos seis critérios de conteúdo.
+
+**Decisão.**
+
+1. **A ordem da rubrica.** São 22 slides em seis partes, entre a abertura e o encerramento.
+   Cada slide leva a parte a que responde (`parte`), e o rodapé diz qual, com o número do
+   critério ("1 · imersão no problema"). O slide 2 é o mapa, com os slides de cada parte. Um
+   teste confere que as seis partes existem, em ordem, e que cada item da rubrica tem slide.
+2. **Autocontido.** O teto de palavras na tela subiu de 70 para 90. O PDF vai para o Drive e é
+   lido sem a fala, e as orientações pedem slides "claros, completos e autocontidos".
+3. **Nenhum número digitado, também nas partes novas.** O planejado x realizado sai do
+   cronograma e do checklist: 39 de 43 entregas até o SR1, com os responsáveis. O avanço sai do
+   backlog. A matriz CSD de 25/09 virou dado (`CSD_EM_25_09`, em `analises.ts`), e o documento
+   de síntese da pesquisa passou a lê-la de lá. Quando a fala diz "cinco fontes" ou "oito
+   alternativas", o número vem da fonte, por extenso.
+4. **A versão de cinco minutos saiu.** Ela existia porque o tempo não estava confirmado. Agora
+   está, e o deck fecha em 11:50 de fala, com 3:10 de margem para as trocas de quem fala, a
+   demonstração ao vivo e o nervoso do dia (11:59 e 3:01 depois da revisão de 03/10, item 9).
+   `?versao=curta` cai no deck inteiro.
+5. **Legível numa chamada de vídeo.** O SR1 herdou a escala compacta da AV1 de ML. Os ordinais
+   saíram da cor da hairline (1,8:1) para o cinza de texto. O rótulo passou a 13px, o rodapé a
+   14px e a posição atual/total a 16px, em cor de texto. O traço dos wireframes passou a usar o
+   cinza de texto, e o slide cresce em telas de 1500 e 1800 pixels.
+6. **A fala só diz o que o repositório sustenta.** Os wireframes foram desenhados depois das
+   primeiras telas, então a fala diz que cada desenho "corresponde" a uma tela, e não que
+   "virou" uma. A regra é dado com versão, mas muda por código, e a fala não diz que ela se
+   ajusta pela tela. A sessão de ideação está registrada só como roteiro e resultado, o SCAMPER
+   não foi usado, a pesquisa não tem entrevista e as personas vieram do caso. Os quatro pontos
+   estão nas respostas preparadas, e dois deles estão no balanço como pontos de melhoria.
+7. **Dois defeitos do site que a banca veria.** O link da pasta do Drive nunca aparecia, porque
+   `TopoRegistro`, o único componente que o mostrava, não é montado em lugar nenhum. Agora a
+   seção de documentos mostra o link quando `NEXT_PUBLIC_DRIVE_URL` existe. O imprensado
+   aparecia no cronograma público como "a fazer" e "a definir", e agora aparece como pausa.
+8. **Revisado como banca antes de sair.** Uma leitura do PDF como quem avalia, critério a
+   critério, achou afirmações que o repositório não sustenta, e elas mudaram. O cartão da
+   demonstração de reserva dizia "recebe 80% da gratificação", e o percentual é suposição
+   nossa até termos o Decreto 36.482/2023: no slide, a linha passou a dizer isso. "A regra como
+   dado" saiu de alcançado para em parte, porque a versão 3 pediu código novo no motor. A
+   equipe tem seis frentes com dono, não sete: o Kerry apoia a pesquisa. A ideação mostra o que
+   dá para abrir (o roteiro e as oito alternativas), e não as 18 ideias que o roteiro previa. O
+   planejado x realizado ganhou o dono e a data nova de cada compromisso, e o que está em
+   andamento ganhou dono. A matriz CSD do Kick-off voltou à versão de 12/09, que tinha sido
+   reescrita no lugar; a de 25/09 continua em `CSD_EM_25_09`. O slide 8 e o 19 ganharam cinco
+   segundos cada, e o deck passou de 11:35 para 11:50 de fala.
+9. **A segunda revisão, de 03/10, véspera do SR1.** Quatro revisões independentes leram o PDF
+   como a banca, um critério por vez, e cada achado foi conferido no repositório antes de
+   entrar. O slide 3 diz que as seis unidades seguem "uma conta que a portaria não traz", e não
+   que erram, porque ainda não sabemos se é erro. Cada objetivo do slide 8 diz o próximo passo,
+   e o escopo usa "dado pessoal real", o mesmo termo da LGPD do slide 11. Cada técnica do slide
+   9 diz como funciona. A aderência ganhou o porquê no slide 10. O cartão de Direito ganhou a
+   base legal e a Atividade 2. O slide 15 passou a ter o mesmo trio do benchmarking do slide 7:
+   conta aberta, regra com versão e registro de quem mudou. Os wireframes dizem a decisão que
+   cada um fixa, e as barras deixaram de sumir no escuro. O slide 19 diz, calculado, quem fica
+   fora da tabela e por quê. O slide 20 compara os 55% com os 61% que o plano pedia. O
+   fechamento diz os próximos passos com data. Nomes próprios e siglas voltaram à forma certa,
+   e o sistema passou a escrever número com vírgula. O slide 13 passou para o João Pedro, que
+   segue no 14, e o João Henrique ganha o tempo de abrir o sistema. O deck foi de 11:50 para
+   11:59 de fala. A mesma revisão achou o defeito da demonstração ao vivo (ADR-048).
+
+**Consequência.** Cada critério da rubrica tem slide próprio, e a banca confere a cobertura
+pelo rodapé. A relação entre problema, solução e plano, que as orientações pedem, está dita em
+uma linha no fechamento. O percentual de avanço aparece de três jeitos, cada um com a conta:
+91% do que o cronograma pedia até hoje, 55% das entregas do semestre, na metade do calendário, e 65%
+das histórias do backlog no ar.
+
+**O que se perdeu.** O deck ficou mais denso, e a demonstração ao vivo encurtou para 70
+segundos. O balanço diz em público que as entregas até o SR1 estão registradas em nome de poucas
+pessoas. Isso é verdade no checklist, e o tratamento está no mesmo slide. Algumas pendências só a
+equipe resolve, e continuam abertas: salvar o PDF no Drive e preencher a variável na Vercel,
+publicar o registro da sessão de ideação, validar os registros das semanas 5 e 6 e ensaiar com
+cronômetro.
+
+## ADR-048 · A escrita do protótipo vai num diário assinado no cookie, porque na Vercel a rota e a página são funções diferentes
+
+**Contexto.** Desde 25/09 (ADR-046) cada visitante escreve numa cópia própria, guardada num `Map`
+do módulo `src/lib/sistema/estado.ts` e achada por um id aleatório no cookie. A ADR-046 já
+admitia que, em serverless, a cópia "pode nem valer entre duas requisições". Na revisão de
+03/10, véspera do SR1, ficou claro que o caminho da demonstração ao vivo nunca tinha rodado em
+produção. O build da Vercel (`vercel build`, em `.vercel/output/functions`) mostra o porquê: as
+rotas `/api/sistema/lancamento`, `/api/sistema/ciclo` e `/api/sistema/contestacao` apontam para
+um grupo de funções, e a página `/sistema`, para outro. A memória de um não chega ao outro.
+
+Reproduzimos com dois `next start`, um só para `/api` e outro só para as páginas, atrás de um
+proxy. A versão que estava em produção (8a36db8) falha os dois testes da demonstração: aparece
+"Lançamento registrado.", e o campo volta vazio (esperado 170, recebido vazio). Os testes de
+ponta a ponta não pegavam porque `next start` é um processo só.
+
+**Decisão.** A cópia passa a ser refeita a cada requisição a partir de um **diário**: a lista, em
+ordem, das escritas que mudaram a cópia (lançar, avançar etapa e contestar, inclusive a
+tentativa recusada que fica na trilha), cada uma com a hora gravada. O diário viaja no cookie
+`prumo_diario` do próprio navegador (`src/lib/sistema/visitante.ts`).
+
+1. **Assinado** com HMAC-SHA256, com o segredo do painel numa chave própria (`:diario`). Um
+   token de um não serve no lugar do outro, e um diário editado à mão volta para a base pura.
+   Isso importa porque a credencial de avançar etapa fica na rota, e um diário forjado seria
+   escrita pulando a rota.
+2. **Compactado** (deflate) e **validado** por esquema, com teto de descompactação.
+3. **Com teto** de 3.800 caracteres. A demonstração inteira usa menos da metade. Quando o diário
+   não cabe mais, a escrita é recusada com aviso, nunca perdida calada.
+4. **Sem prazo**: é cookie de sessão. A cópia some quando o navegador fecha.
+5. **Mesma cópia em qualquer lugar.** O motor é função pura e a hora vem do diário, então refazer
+   dá sempre a mesma cópia, com os mesmos ids. `estadoDo(sessao)` substitui
+   `estadoDo(visitante)`, e as telas não mudaram: o contrato de `RepositorioDados` é o mesmo.
+
+**Como se prova.** Um teste refaz a demonstração do SR1 só com o diário, como faz a página na
+Vercel, e compara a cópia, os ids e as notas. A suíte de ponta a ponta passou inteira com rotas e
+páginas em processos separados atrás do proxy. E na própria Vercel, com curl de uma sandbox: o
+mesmo lançamento (170 de 200, USF Canário, julho), seguido de cinco leituras da tela, voltou
+vazio nas cinco na produção de 8a36db8 e com 170 nas cinco no preview desta mudança.
+
+**Consequência.** Qualquer instância de qualquer função enxerga a mesma cópia, e a demonstração do
+slide 14 não depende de sorte. O "pode não valer entre requisições" da ADR-046 deixa de valer, e
+o teto de 100 visitantes em memória saiu: não há mais memória por visitante no servidor.
+
+**O que se perdeu.** O cookie cresce com o que se escreve, e uma sessão longa chega ao teto. Duas
+abas escrevendo ao mesmo tempo podem perder uma escrita, e vale a última. O diário depende de
+`ADMIN_COOKIE_SECRET`, que produção já tem; sem o segredo, a escrita não grava. Durar de verdade,
+para todo mundo, continua sendo papel do banco (ADR-011 e ADR-012).
+
+## ADR-049 · O que o sistema fazia sem história virou história, fora da conta das 26
+
+**Contexto.** O backlog da Semana 4 tem 26 histórias, e no SR1 o deck mostrou 17 delas no ar. O
+sistema faz mais do que as 26 pedem: a SEAB lançando por uma unidade atrasada, o ranking com a
+opção de esconder os nomes, os sinais de analytics, o tutorial guiado, o tema claro. Quase tudo
+isso já estava no código em 16/08, a data mais antiga que o Git guarda, e nenhuma história
+registrava. Quem olhava só o backlog via um sistema menor do que o que está no ar.
+
+**Decisão.** Um documento novo no SR1, "Histórias que surgiram na construção", escrito em 03/10
+e publicado depois da banca. São 12 histórias do produto e 2 do protótipo, no formato da Semana
+4. Cada uma diz de onde veio, com a data ou a ADR que se confere, e onde se confere na tela.
+Três regras:
+
+1. **Só o que existe e se confere na tela.** Estado "no ar" ou "em parte", e visível para quem
+   visita, sem sessão de admin. O que falta é história do backlog, com MoSCoW, e não entra aqui.
+2. **Fora da conta das 26.** `BACKLOG` (s6) continua o retrato de 25/09. O deck do SR1 conta a
+   partir dele e não importa o arquivo do ciclo sr1, e `sr1.test.ts` confere isso: nenhuma
+   história publicada depois da banca muda um número que a banca viu.
+3. **Nenhuma toma o lugar das 9 que faltam.** Abrir o mês, definir a janela, cadastrar a régua e
+   a regra pela tela, responder à contestação, a revisão do distrito e o aviso antes do envio
+   continuam no backlog. Partir uma delas para contar a parte pronta como história nova seria
+   inflar o número. Por isso a régua que já se lê na tela não virou história: ela é a metade
+   "só leitura" de quatro histórias que o backlog já tem.
+
+**A revisão antes do merge.** Um revisor adversarial conferiu cada história contra o código e o
+histórico do Git, e mudou a lista. Saíram duas: o funil por unidade, porque em 16/08 a história
+dos totais por distrito pedia "o funil do ciclo"; e a recusa de lançamento com rastro, que só
+aparece com sessão de admin e cuja recusa é parte da janela, que falta. Entraram duas que
+estavam esquecidas: a SEAB conferindo a nota de qualquer gerente e abrindo contestação em nome
+dele. Uma terceira que ele achou, os avisos da conta no painel da gestão, ficou de fora pelo
+mesmo critério: a base de teste não tem nota com aviso, e ninguém confere na tela.
+Quatro passaram para "em parte": esconder os nomes (o tipo fica, e a unidade única do tipo se
+reconhece), o recorte do distrital, os números que parecem erro (só os 12 primeiros, dos meses
+mais antigos) e os modelos (o agrupamento mostra a referência sem o valor). E três origens
+ganharam a data certa.
+
+**Sem MoSCoW.** Elas já estão construídas, e prioridade serve para decidir o que construir.
+Entram na ordem das sprints junto com o resto, quando a Semana 7 reordenar o backlog.
+
+**Consequência.** O avanço do backlog continua 17 de 26, o número do SR1, e o deck e o PDF não
+mudaram. A data "16/08" que aparece em várias linhas é a do commit mais antigo que o Git guarda:
+a função pode ser mais velha, nunca mais nova.
+
+## ADR-050 · O sistema passa a ler e gravar num PostgreSQL, com o schema remodelado para o domínio atual
+
+**Contexto.** Desde a ADR-011 o app rodava sem banco, com a base sintética em memória e, desde a
+ADR-048, a escrita de cada visitante num diário no cookie. O schema de `supabase/migrations/`
+existia, testado, mas modelava o domínio anterior à reunião de 22/08 (ADR-034), e a ligação de
+uma persistência real ficou como pendência declarada em `docs/banco.md`. Em 25/10 a equipe
+decidiu tirar o sistema dos dados em memória: o que se lança tem de ficar, para todos.
+
+**Decisão.**
+
+1. **Schema novo em `db/migrations/`**, no domínio atual: distritos, tipos de unidade,
+   unidades, gerentes, indicadores, subindicadores, regras versionadas com a aplicabilidade em
+   tabela própria, ciclos, lançamentos por subindicador e unidade, notas das unidades e dos
+   distritos, contestações e a trilha. O schema antigo fica onde está, desligado, como prova de
+   RLS por perfil.
+2. **As quatro travas viram gatilho** (trilha append-only, ciclo que só avança, janela de
+   lançamento, regra imutável, esta estendida à aplicabilidade), e a **trilha passa a ser escrita
+   pelo banco**. A aplicação só informa autor, perfil e hora com `set_config` dentro da transação:
+   o relógio continua injetado.
+3. **Driver `driver-postgres.ts`** implementando o mesmo `RepositorioDados`. Nenhuma tela mudou.
+   A conta continua no motor puro: ao homologar, o driver calcula e grava as notas na mesma
+   transação.
+4. **Sem banco configurado, o sistema avisa**, em vez de cair calado na memória. O seed continua
+   como fonte da carga inicial e dos testes de unidade; `DADOS_DRIVER=seed` liga o modo antigo
+   só quando pedido.
+5. **PostgreSQL 16 em Docker** para desenvolvimento (`docker-compose.yml`), `pg` sem ORM, e um
+   migrador de cinquenta linhas que anota cada arquivo aplicado. O próprio site também tem
+   imagem (`Dockerfile`): `docker compose up -d --build` sobe tudo sem Node na máquina, e a
+   subida do container migra e semeia sozinha.
+
+**Como se prova.** `driver-postgres.test.ts`, contra um Postgres real: a base sintética entra e
+volta igual, campo a campo; as escritas dão as mesmas mensagens da camada em memória; a nota de
+julho homologada no banco é idêntica à que o motor dá em memória; e SQL direto que fere uma trava
+é recusado. A suíte de ponta a ponta roda contra o banco, e a jornada que dizia "o que um
+visitante lança, o outro não vê" passou a provar o contrário.
+
+**Consequência.** A escrita volta a ser uma só para todo mundo, agora de propósito: o avanço de
+etapa da SEAB fecha o mês para todos, como no processo real, e por isso continua exigindo a
+credencial do painel. O `git clone && npm run dev` sem credencial deixou de valer: o caminho mais curto agora é
+`git clone && docker compose up -d --build`, que pede só o Docker.
+
+**Um defeito antigo que o Docker revelou.** O leitor de Markdown de `src/lib/markdown.ts`
+quebrava linhas só em `\n`. Numa cópia do Windows (CRLF), um item de lista terminado em `\r`
+não virava lista nem parágrafo, o laço não andava e o `next build` morria sem memória. Na
+Vercel nunca apareceu, porque o build parte do Git, com LF. O build da imagem parte da pasta de
+quem roda, e no Windows ela é CRLF. Passou a quebrar em `\r?\n`, com teste.
+
+**O que ficou para depois.** Login e RLS por perfil no schema novo: sem autenticação, o banco não
+sabe quem é quem, que é o custo descrito na ADR-011. Lançar e contestar continuam sem senha, e no
+site publicado isso passa a gravar para todos. Produção precisa de um Postgres hospedado com a
+`DATABASE_URL` na Vercel. O diário no cookie (ADR-048) fica só no driver do seed.
+
+## ADR-051 · Quem escreve entra com conta; senha com scrypt, sessão com AES-256-GCM, credenciais do banco no Secrets Manager
+
+**Contexto.** Com o banco ligado (ADR-050), o que se lança vale para todos, mas qualquer
+visitante podia lançar e contestar escolhendo um papel no seletor, e avançar etapa dependia
+da senha do painel, que é pública no briefing. Pediu-se login com AES e uma forma segura de
+guardar as credenciais do banco que vai para a AWS.
+
+**Decisão.**
+
+1. **Escrever exige conta; ler, não.** Sem login, o visitante navega todas as visões pelo
+   seletor, só leitura, como a banca precisa. Com login, o perfil e o vínculo vêm do banco e o
+   seletor some. Gerente lança e contesta só pela própria unidade (ou distrito); avançar etapa
+   é só da conta da SEAB. A sessão do painel administrativo deixou de bastar para isso.
+2. **AES onde AES serve.** A senha NÃO é cifrada: é guardada como hash scrypt com sal,
+   porque cifra é reversível e hash não. O AES-256-GCM cifra e autentica o cookie de sessão.
+3. **Revogação de verdade.** A sessão carrega uma versão; trocar a senha ou desativar a conta
+   a invalida na hora. Bloqueio da conta no banco após 5 erros seguidos.
+4. **Credenciais do banco fora do código.** Em produção, o app recebe só o nome do segredo no
+   AWS Secrets Manager e lê usuário e senha com o papel IAM de quem roda, com cache curto e
+   nova tentativa quando a senha muda (rotação). Desenvolvimento segue com `DATABASE_URL`.
+5. **Contas sem dado pessoal.** Login técnico (`seab`, `ger-usf-canario`), criado por script,
+   com a senha pedida sem eco ou gerada; nunca como argumento.
+
+**Como se prova.** Testes de unidade da criptografia (adulteração, chave errada, falha fechada
+em produção); testes contra Postgres real do login, bloqueio, revogação e vínculo da conta; um
+teste de rotação que troca a senha de um papel no meio do caminho e mostra que a aplicação se
+recupera, e que falha quando a recuperação é desligada; e jornadas de ponta a ponta: visitante
+recusado, senha errada, gerente barrada na unidade alheia, SEAB homologando com a própria conta.
+
+**Consequência.** A demonstração ao vivo precisa de contas (`scripts/usuarios.ts demo`), e o
+e2e cria as suas num banco descartável. Produção passa a exigir `SESSAO_CHAVE`.
+
+**O que ficou para depois.** RLS por perfil no schema ligado, MFA, e trocar a senha pública do
+painel administrativo.
+
+## ADR-052 · A sessão vira JWE (JWT cifrado com AES-256-GCM) e o cookie passa a SameSite=Strict
+
+**Contexto.** A ADR-051 guardou a sessão num cookie `httpOnly` cifrado com AES-256-GCM, num
+formato próprio, com `SameSite=Lax`. Na revisão da equipe veio a sugestão de usar JWT em
+cookie com `SameSite=Strict`, já que site e API moram no mesmo domínio.
+
+**Decisão.**
+
+1. **O token passa a ser um JWE** (RFC 7516), com `alg: dir` e `enc: A256GCM`: a mesma
+   cifra de antes, agora num formato padrão, com os campos de JWT (`sub`, `iss`, `aud`,
+   `iat`, `exp`, `jti`). Biblioteca `jose`. JWE e não JWT comum: o JWT comum é só assinado,
+   e quem pega o cookie lê o conteúdo; o JWE é cifrado.
+2. **A abertura aceita um algoritmo e uma cifra só**, e confere emissor, audiência e
+   validade. JWT só assinado, `alg: none` e cifra diferente são recusados, que são as
+   falhas clássicas de biblioteca de JWT.
+3. **O JWE não substitui a conferência no banco.** A cada requisição, a conta precisa estar
+   ativa e com a mesma versão de sessão: trocar a senha ou desativar continua derrubando a
+   sessão na hora, o que um JWT puro, sem estado, não faria.
+4. **`SameSite=Strict`.** O navegador só manda o cookie em requisição nascida no próprio
+   site. O custo aceito: quem abre um link do `/sistema` vindo de fora chega deslogado até
+   navegar dentro do site.
+
+**Como se prova.** Testes de unidade do formato (cinco partes, cabeçalho), da cifra, da
+validade ao segundo e dos ataques (JWT assinado, `alg: none`, A128GCM, emissor e audiência
+alheios); os testes de login e revogação contra Postgres real seguem valendo; e um teste de
+ponta a ponta confere no navegador que o cookie é `httpOnly`, `Strict` e um JWE ilegível.
+
+**Consequência.** Outro serviço que tenha a chave pode abrir a sessão com qualquer biblioteca
+de JWT, o que serve à ida para a AWS. Sessões emitidas no formato antigo deixam de valer: quem
+estava logado entra de novo.
+
+## ADR-053 · Um segundo caminho até a produção: CodePipeline, Terraform e uma EC2 com duas portas
+
+**Contexto.** O deploy na Vercel é um push, e a infraestrutura não aparece em lugar nenhum: não
+se lê, não se revisa e não se reproduz. A lente de nuvem pede pipeline de CI/CD com
+verificações automáticas e infraestrutura que se possa auditar.
+
+**Decisão.** Um pipeline no AWS CodePipeline, com toda a infraestrutura em Terraform, separada
+em oito módulos: criptografia, rede, registro, segredos, servidor, dns, entrega e pipeline. O passo a
+passo e a operação estão em `docs/pipeline.md`. Cinco regras:
+
+1. **Fitness functions antes de qualquer imagem.** Gitleaks no histórico inteiro do Git; Trivy
+   nas dependências, nos segredos, nas licenças e no Terraform; Hadolint no Dockerfile;
+   `terraform validate`; e a suíte que o projeto já tinha. Três estágios em paralelo, e qualquer
+   um reprova.
+2. **A imagem só chega ao ECR depois do Trivy**, e o deploy referencia o digest, não a tag: o que
+   foi varrido é o que roda.
+3. **Duas portas.** NACL e security group só abrem TCP 80 e 443. Não existe 22: sem chave SSH,
+   `sshd` desligado, acesso pelo SSM Session Manager. O app não publica porta no host; só o
+   Caddy, que termina o TLS.
+4. **Segredo fora do state.** `ADMIN_SENHA` e `ADMIN_COOKIE_SECRET` nascem de recurso efêmero
+   e vão para o SSM por atributo write-only.
+5. **Produção conferida de fora.** Depois do deploy, o estágio Fumaca mede pela internet a versão
+   no ar, o certificado, os cabeçalhos de segurança e as portas.
+
+**O que a construção achou.** As verificações reprovaram o próprio `main` antes de existir
+pipeline, e cada achado foi corrigido em vez de suprimido:
+
+- O Trivy achou três CVEs críticas no Next 15.5.23, e altas no postcss, no sharp e no
+  source-map-js. O Next foi para 15.5.29, na mesma linha, e os três transitivos para versões
+  fixas em `overrides`, todas publicadas havia mais de duas semanas.
+- O Trivy na imagem reprovou a distroless em Debian 12: libssl3 com uma CVE crítica e seis
+  altas. A base passou para Debian 13, sem nenhuma.
+- O leitor de Markdown entrava em laço infinito com fim de linha CRLF, o de um checkout Windows,
+  e estourava a memória do build e da suíte. Corrigido em `src/lib/markdown.ts`, com teste.
+- O Gitleaks achou um único segredo no histórico: o segredo de cookie fixo da suíte e2e. Entrou
+  na allowlist pelo arquivo e pelo valor, nunca pela regra inteira.
+- Das supressões do Trivy no Terraform, duas disparavam de verdade e ficaram, com a
+  justificativa ao lado do recurso. As que não disparavam saíram: supressão morta engana quem lê.
+
+**Consequência.** A Vercel e o GitHub Actions continuam como estavam. A frase de `docs/nuvem.md`
+"nada aqui é servidor que a equipe administre" passa a ter exceção: uma EC2, descrita inteira no
+código, com as limitações declaradas em `docs/pipeline.md`, a começar por ser uma instância
+numa zona só.

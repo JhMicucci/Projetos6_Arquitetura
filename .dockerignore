@@ -1,0 +1,42 @@
+# O contexto da imagem leva só o que o build e o migrador leem. Menos arquivo
+# é build mais rápido e nenhum segredo local copiado para dentro do contêiner.
+
+# Instalados e gerados dentro do próprio contêiner
+node_modules
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Segredo nunca entra no contexto, nem por engano. O exemplo não tem segredo.
+.env*
+!.env.example
+*.pem
+
+# Testes de ponta a ponta, relatórios e histórico do Git
+e2e
+playwright.config.ts
+test-results
+playwright-report
+coverage
+.git
+.github
+.claude
+.dados
+.vercel
+
+# Infraestrutura e pipeline não são parte do app.
+infra
+Dockerfile
+.dockerignore
+.gitleaks.toml
+.gitleaksignore
+
+# A base por unidade da SESAU (ADR-044) vive em ml/data para os cadernos. O app
+# lê só o JSON versionado em src/content/ml, então ml/ fica fora da imagem: a
+# autorização cobre o repositório, não a distribuição dentro de um contêiner.
+ml
+
+# Textos longos de apoio, sem uso em tempo de build ou execução.
+DOSSIE.txt
+PROJETO-EXPLICADO.txt

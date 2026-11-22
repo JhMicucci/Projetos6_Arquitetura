@@ -1,0 +1,148 @@
+import { TRAVAS_VERSIONADAS } from '@/content/travas'
+import { CRONOGRAMA, type CicloId } from '@/lib/cronograma'
+import { FEATURES, PERFIL_PADRAO, type PerfilId } from '@/lib/features'
+import { hojeEmRecife, somarDias, type DataISO } from '@/lib/datas'
+import { deckEmDestaque, type DeckDoMarco } from '@/lib/decks'
+import {
+  ADIANTAMENTO_PADRAO,
+  calcularReleaseAtual,
+  ciclosVisiveis,
+  ehSemanaCorrente,
+} from '@/lib/releases'
+
+/**
+ * Que ciclos o visitante enxerga HOJE, derivado do cronograma real.
+ *
+ * Estes números eram literais nos testes: `s4` era "a semana que o visitante
+ * ainda não vê". Só que o release anda com o calendário, e no dia em que a s4
+ * virou pública o teste passou a falhar sozinho, sem ninguém ter tocado no
+ * código. Foram três falhas de CI por isso.
+ *
+ * Um teste com data embutida não está errado hoje e certo amanhã: ele está
+ * errado desde sempre e só cobra a conta depois. Por isso o recorte sai da
+ * mesma fonte única de verdade que a aplicação usa (`src/lib/cronograma.ts`),
+ * e não de um id escrito à mão.
+ */
+function recorte() {
+  const hoje = hojeEmRecife()
+  const releaseAtual = calcularReleaseAtual({ hoje, adiantamentoDias: ADIANTAMENTO_PADRAO })
+  // As travas versionadas entram na conta pelo mesmo motivo que entram em
+  // `scripts/verificar-vazamento.ts`: elas fazem parte do padrão do ambiente.
+  // Sem elas o teste procuraria esconder um ciclo que o site publica de
+  // propósito, e acusaria vazamento onde há decisão registrada em
+  // `src/content/travas.ts`.
+  const visiveis = ciclosVisiveis({ releaseAtual, travas: TRAVAS_VERSIONADAS })
+
+  // Só ciclos que RENDERIZAM um cartão de registro entram na conta. Os
+  // imprensados (`tipo: 'pausa'`) têm carregador `null` de propósito: as
+  // entregas deles são acumuladas na semana seguinte. Procurar o marcador de um
+  // imprensado não acha nada nem para o admin, e o teste falharia acusando um
+  // vazamento que não existe.
+  //
+  // O registry é `server-only` e não pode ser importado aqui, então o critério é
+  // o `tipo` do cronograma. `cronograma.test.ts` guarda a equivalência entre os
+  // dois, para esta dedução não apodrecer caladinha.
+  const comRegistro = CRONOGRAMA.filter((c) => c.tipo !== 'pausa').map((c) => c.id as CicloId)
+
+  return {
+    visiveis: comRegistro.filter((id) => visiveis.includes(id)),
+    ocultos: comRegistro.filter((id) => !visiveis.includes(id)),
+    /** Inclui os imprensados: eles aparecem como cartão, só não têm registro. */
+    todosVisiveis: CRONOGRAMA.map((c) => c.id as CicloId).filter((id) => visiveis.includes(id)),
+  }
+}
+
+const RECORTE = recorte()
+
+/** Um ciclo que o visitante JÁ vê. O primeiro, que é o mais estável. */
+export const CICLO_PUBLICO: CicloId = RECORTE.visiveis[0]
+
+/** Todos os ciclos que o visitante vê hoje: para um teste perguntar por um específico. */
+export const CICLOS_PUBLICOS: readonly CicloId[] = RECORTE.visiveis
+
+/**
+ * Qual cartão deve estar marcado como "esta semana" hoje, se algum.
+ *
+ * Nas semanas imprensadas é um cartão SEM registro, e depois que o cronograma
+ * acaba não é nenhum. Derivar isto é o que impede o teste de exigir uma
+ * pílula que a página não tem como mostrar: ele ficou vermelho de 05/09 a
+ * 11/09 exatamente por isso, e teria voltado ao verde sozinho no sábado,
+ * escondendo o defeito em vez de expô-lo.
+ */
+export const CICLO_DA_SEMANA: CicloId | null =
+  RECORTE.todosVisiveis.find((id) => ehSemanaCorrente(hojeEmRecife(), id)) ?? null
+
+/**
+ * Que deck o topo do site deve oferecer hoje, se algum. Mesma conta que a
+ * home faz: o do marco mais recente já liberado, dentro da janela de destaque.
+ */
+export const DECK_EM_DESTAQUE: DeckDoMarco | null = deckEmDestaque(hojeEmRecife(), (ciclo) =>
+  RECORTE.todosVisiveis.includes(ciclo),
+)
+
+/** O primeiro ciclo que o visitante AINDA não vê: o alvo natural do teste de vazamento. */
+export const CICLO_OCULTO: CicloId = RECORTE.ocultos[0]
+
+/**
+ * As rotas de funcionalidade que o visitante comum AINDA não pode abrir hoje.
+ *
+ * Mesma lição do `CICLO_OCULTO`: a lista era literal (`/sistema/cam` e
+ * companhia), e no dia em que a s5 abriu essas rotas passaram a responder 3xx
+ * onde o teste exigia 404. Um teste com o calendário embutido não está errado
+ * amanhã: ele está errado desde sempre, e só cobra a conta depois.
+ */
+export const ROTAS_FECHADAS: readonly string[] = FEATURES.filter(
+  (f) => !RECORTE.todosVisiveis.includes(f.ciclo),
+).map((f) => f.rota)
+
+/** E as que já abriram. Vazio antes da s5, e é isso que a casca precisa dizer. */
+export const ROTAS_ABERTAS: readonly string[] = FEATURES.filter((f) =>
+  RECORTE.todosVisiveis.includes(f.ciclo),
+).map((f) => f.rota)
+
+/**
+ * A véspera do dia em que a última leva de telas saiu, e o que estava fechado nela.
+ *
+ * Desde a véspera do SR1 as oito telas estão no ar, e `ROTAS_FECHADAS` ficou
+ * vazia: o teste do portão de release deixaria de medir qualquer coisa. O
+ * portão continua existindo, então o teste passa a exercitá-lo numa data em que
+ * ele fechava alguma coisa, pela prévia de visitante com data simulada do
+ * painel. A data sai do cronograma e das features, nunca escrita à mão.
+ */
+function vesperaDaUltimaTela(): {
+  data: DataISO
+  fechadas: readonly string[]
+  /** Liberadas naquela data e do perfil padrão: respondem com redirecionamento. */
+  abertas: readonly string[]
+} {
+  const ordem = CRONOGRAMA.map((c) => c.id as CicloId)
+  const ultimo = [...FEATURES]
+    .map((f) => f.ciclo as CicloId)
+    .sort((a, b) => ordem.indexOf(a) - ordem.indexOf(b))
+    .at(-1)
+  const abre = CRONOGRAMA.find((c) => c.id === ultimo)?.data ?? hojeEmRecife()
+  const data = somarDias(abre, -ADIANTAMENTO_PADRAO - 1)
+  const releaseAtual = calcularReleaseAtual({ hoje: data, adiantamentoDias: ADIANTAMENTO_PADRAO })
+  const visiveis = ciclosVisiveis({ releaseAtual, travas: TRAVAS_VERSIONADAS })
+  return {
+    data,
+    fechadas: FEATURES.filter((f) => !visiveis.includes(f.ciclo)).map((f) => f.rota),
+    // Abertas E do perfil de quem chega sem escolher: essas redirecionam.
+    abertas: FEATURES.filter(
+      (f) =>
+        visiveis.includes(f.ciclo) && (f.perfis as readonly PerfilId[]).includes(PERFIL_PADRAO),
+    ).map((f) => f.rota),
+  }
+}
+
+export const VESPERA_DA_ULTIMA_TELA = vesperaDaUltimaTela()
+
+/**
+ * O marcador que o registro imprime no HTML de cada ciclo renderizado.
+ *
+ * Procurar por ele é o que torna o teste de vazamento honesto: `<details>`
+ * fechado continua no DOM, então "não aparece na tela" não prova nada.
+ */
+export function marcador(ciclo: CicloId): string {
+  return `PRUMO-MARCADOR-CICLO-${ciclo}`
+}

@@ -1,0 +1,90 @@
+import type { NextConfig } from 'next'
+
+const emDesenvolvimento = process.env.NODE_ENV === 'development'
+
+/**
+ * CSP básica (§9). Notas honestas, registradas em docs/seguranca.md:
+ * - `style-src 'unsafe-inline'` é exigido pelo Next/Tailwind em runtime.
+ * - `script-src 'unsafe-inline'` cobre os scripts de bootstrap do App Router;
+ *   uma CSP com nonce por requisição é o próximo passo, não o estado atual.
+ * - `'unsafe-eval'` só existe em desenvolvimento (Fast Refresh).
+ */
+const csp = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${emDesenvolvimento ? " 'unsafe-eval'" : ''}`,
+  `connect-src 'self'${emDesenvolvimento ? ' ws: http://localhost:*' : ''}`,
+  "manifest-src 'self'",
+  'upgrade-insecure-requests',
+].join('; ')
+
+const nextConfig: NextConfig = {
+  poweredByHeader: false,
+
+  /**
+   * Saída autocontida só quando a imagem de contêiner pede (o Dockerfile
+   * exporta NEXT_OUTPUT=standalone). Fora dele nada muda: `next start`, o
+   * `verificar-vazamento` e a Vercel continuam com o build de sempre.
+   * Ver docs/pipeline.md.
+   */
+  output: process.env.NEXT_OUTPUT === 'standalone' ? 'standalone' : undefined,
+
+  /**
+   * Carregados pelo `require` do Node em tempo de execução, não empacotados
+   * pelo webpack. A instrumentação do OpenTelemetry se acopla ao `pg` no
+   * momento do `require`: empacotado, o banco sumiria dos traces sem erro
+   * nenhum. Ver src/lib/telemetria/.
+   */
+  serverExternalPackages: [
+    'pg',
+    '@opentelemetry/sdk-node',
+    '@opentelemetry/sdk-trace',
+    '@opentelemetry/exporter-trace-otlp-proto',
+    '@opentelemetry/instrumentation-http',
+    '@opentelemetry/instrumentation-pg',
+  ],
+
+  /**
+   * Arquivos de `docs/` que o servidor lê em tempo de execução.
+   *
+   * O rastreador do Next segue `import`, não `readFile(join(process.cwd(),
+   * ...))`. Sem esta lista, `/transparencia-ia` (que renderiza
+   * `docs/uso-de-ia.md`), `/pitch/pdf` e `/ml/pdf` funcionam no repositório e somem no
+   * deploy, porque os arquivos não entram no pacote da função.
+   */
+  outputFileTracingIncludes: {
+    '/transparencia-ia': ['./docs/*.md'],
+    '/pitch/pdf': ['./docs/pitch-kickoff.pdf'],
+    '/ml/pdf': ['./docs/ml-av1.pdf'],
+    '/sr1/pdf': ['./docs/sr1.pdf'],
+  },
+  async headers() {
+    return [
+      {
+        source: '/:caminho*',
+        headers: [
+          { key: 'Content-Security-Policy', value: csp },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+          },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload',
+          },
+        ],
+      },
+    ]
+  },
+}
+
+export default nextConfig

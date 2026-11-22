@@ -1,0 +1,71 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+# ...menos o exemplo, que não tem segredo nenhum e é o que documenta as variáveis
+# para quem clona. O `.env*` do template do Next engolia ele junto.
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Configuração local do site (driver de arquivo do config-store)
+.dados/
+
+# Artefatos de teste
+/test-results/
+/playwright-report/
+
+# Saídas intermediárias dos cadernos de ML: reproduzíveis rodando ml/notebooks em ordem.
+# O que é versionado é o RESULTADO (src/content/ml/resultados.json), porque é
+# ele que a tela lê e que precisa ser auditável.
+ml/saidas/
+.ipynb_checkpoints/
+__pycache__/
+
+# Worktrees dos agentes do Claude Code: cópias locais, nunca versionadas.
+/.claude/worktrees/
+
+# Terraform: plugins baixados, state local e arquivos com dados da conta.
+# O .terraform.lock.hcl é versionado: ele fixa as versões dos providers.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+infra/terraform/**/backend.hcl
+infra/terraform/**/terraform.tfvars

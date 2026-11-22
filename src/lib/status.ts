@@ -1,0 +1,80 @@
+import 'server-only'
+import { obterStore } from '@/lib/config/store'
+import { CRONOGRAMA } from '@/lib/cronograma'
+import { hojeEmRecife } from '@/lib/datas'
+import { FEATURES } from '@/lib/features'
+import { repositorio } from '@/lib/dados'
+import { calcularReleaseAtual, dataSimuladaDaJanela, janelaAberta } from '@/lib/releases'
+
+export interface Status {
+  produto: string
+  versao: string
+  ambiente: string
+  commit: string
+  modoDeDados: string
+  dadosPersistentes: boolean
+  driverConfiguracao: string
+  configuracaoGravavel: boolean
+  hojeRecife: string
+  releasePublico: string
+  /** Janela de vitrine aberta: todo visitante vê o semestre inteiro. */
+  vitrineAberta: boolean
+  /** Data que o site está simulando enquanto a vitrine estiver aberta. */
+  dataSimulada: string | null
+  ciclosNoCronograma: number
+  funcionalidades: number
+  registros: {
+    unidades: number
+    indicadores: number
+    subindicadores: number
+    ciclos: number
+    lancamentos: number
+  }
+  latenciaMs: number
+  ok: boolean
+}
+
+/** Health check do §8.4 — build, modo de dados, versão e latência. */
+export async function coletarStatus(): Promise<Status> {
+  const inicio = performance.now()
+
+  const store = obterStore()
+  const dados = repositorio()
+  const config = await store.ler()
+  const panorama = await dados.panorama()
+  const lancamentos = await dados.lancamentos()
+  const hoje = hojeEmRecife()
+  const release = calcularReleaseAtual({
+    hoje,
+    adiantamentoDias: config.adiantamentoDias,
+    override: config.overrideRelease,
+  })
+
+  return {
+    produto: 'Prumo',
+    versao: process.env.npm_package_version ?? '0.1.0',
+    ambiente: process.env.NODE_ENV ?? 'desconhecido',
+    // A imagem traz COMMIT_SHA gravado no build, e o teste de fumaça do
+    // pipeline confere este campo.
+    commit: process.env.COMMIT_SHA?.slice(0, 7) || 'local',
+    modoDeDados: dados.nome,
+    dadosPersistentes: dados.persistente,
+    driverConfiguracao: store.nome,
+    configuracaoGravavel: store.gravavel,
+    hojeRecife: hoje,
+    releasePublico: release ?? 'nenhum',
+    vitrineAberta: janelaAberta(),
+    dataSimulada: janelaAberta() ? dataSimuladaDaJanela() : null,
+    ciclosNoCronograma: CRONOGRAMA.length,
+    funcionalidades: FEATURES.length,
+    registros: {
+      unidades: panorama.unidades.length,
+      indicadores: panorama.indicadores.length,
+      subindicadores: panorama.subindicadores.length,
+      ciclos: panorama.ciclos.length,
+      lancamentos: lancamentos.length,
+    },
+    latenciaMs: Math.round((performance.now() - inicio) * 100) / 100,
+    ok: true,
+  }
+}

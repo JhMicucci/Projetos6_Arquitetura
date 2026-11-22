@@ -1,0 +1,149 @@
+# Como operar os releases
+
+Manual da equipe para controlar o que o professor vê e quando. Se você só quer saber "como
+libero a semana", pule para [Receitas](#receitas).
+
+## A ideia em um parágrafo
+
+O site tem duas realidades: a **pública** (o recorte visível hoje) e a **completa** (tudo
+que a equipe já construiu). A pública é sempre um recorte da completa, calculado a partir
+do cronograma. Ninguém precisa "publicar" nada: o conteúdo entra no Git quando fica pronto
+e aparece sozinho na data certa.
+
+## Como o release é calculado
+
+```
+releaseAtual = override manual, se existir
+             : último ciclo cuja data ≤ hoje + ADIANTAMENTO_DIAS
+```
+
+`ADIANTAMENTO_DIAS` vale **7** por padrão: o site mostra sempre uma semana à frente, para
+que o material esteja no ar antes do acompanhamento da equipe.
+
+Depois do cálculo, as **travas por ciclo** são aplicadas:
+
+| Trava | Efeito |
+| --- | --- |
+| `automatico` | Segue o release (padrão) |
+| `sempre_visivel` | Libera aquele ciclo fora de ordem, sem mexer nos outros |
+| `sempre_oculto` | Esconde o ciclo mesmo com a data vencida |
+
+Tudo isso é calculado no **servidor**. Conteúdo de ciclo não liberado não entra no HTML, não
+entra no payload RSC e não entra no bundle — e `npm run verificar-vazamento` prova isso a
+cada build.
+
+## Onde o conteúdo declara seu ciclo
+
+- **Registro semanal:** um arquivo por ciclo em `src/content/ciclos/{id}.tsx`, registrado em
+  `src/content/ciclos/registro.ts`. O registry lista os 18 ciclos; `null` significa "ainda
+  sem registro" — uma decisão explícita, nunca um esquecimento.
+- **Funcionalidades do sistema:** `src/lib/features.ts` amarra cada tela ao ciclo que a
+  libera. Rota não liberada devolve **404**, não uma tela de "em breve".
+- **O pitch do Kick-off:** `/pitch` é a primeira rota protegida por ciclo, e não por
+  funcionalidade: aparece quando o release libera `ko`, e antes disso é 404 como as telas. O
+  PDF dos slides sai por `/pitch/pdf`, com o mesmo portão; nada do deck é servido como arquivo
+  estático, porque `public/` não passa pelo gate (ADR-036).
+
+## Painel administrativo
+
+Acesso por URL direta: **`/admin/entrar`**. Senha em `ADMIN_SENHA`. Nenhuma página do site
+aponta para lá — o ponto que ficava no rodapé saiu na ADR-015, porque anunciava o mecanismo
+a quem só estava visitando. Guarde o endereço; não há link para ele.
+
+> **Antes do primeiro deploy público:** troque `ADMIN_SENHA`. O padrão `0321` está no briefing
+> e neste repositório, que é público. É essa variável — não a ausência do link — que impede
+> alguém de entrar e mexer no que o professor vê.
+
+O painel controla **quando o que já existe fica visível**. Ele não edita conteúdo: conteúdo
+vive no Git, versionado, com histórico de quem escreveu o quê.
+
+| Recurso | Para quê |
+| --- | --- |
+| Modo completo | Ver o projeto inteiro, com faixa fixa avisando que só você vê isso |
+| Ver como visitante | Ver o recorte público — opcionalmente numa data futura |
+| Adiantamento | Mover todos os releases de uma vez; mostra em tempo real qual ciclo cada valor libera |
+| Seletor de release | Fixar um ciclo à mão; "automático (pela data)" volta ao cálculo |
+| Travas por ciclo | Liberar ou esconder um ciclo isolado |
+| Log de liberações | Histórico do que mudou, de quanto para quanto e quando |
+| Checklist da matriz | Evidências exigidas por ciclo, com status e responsável |
+| Faixas paralelas | Marcos de ML e Direito, e o que este projeto alimenta em cada |
+
+## Onde a configuração é gravada
+
+Isto **muda conforme o ambiente** e é a pegadinha mais importante deste documento.
+
+| Ambiente | Driver | O que acontece ao salvar no painel |
+| --- | --- | --- |
+| Desenvolvimento local | `arquivo` | Grava em `.dados/config-site.json`. Vale para todo mundo que acessar aquele servidor |
+| Produção na Vercel | `env (somente leitura)` | **Não grava configuração global.** A mudança vira overlay assinado na sua sessão e vale só para você |
+
+O filesystem da Vercel é read-only — por isso o driver de arquivo não serve lá, e o projeto
+não usa banco (ver `banco.md`). O painel avisa isso em vermelho quando o store não é
+gravável.
+
+### Mudar o que o público vê em produção
+
+Altere as variáveis de ambiente na Vercel e faça o redeploy:
+
+| Variável | Exemplo | Efeito |
+| --- | --- | --- |
+| `RELEASE_ADIANTAMENTO_DIAS` | `14` | Mostra duas semanas à frente |
+| `RELEASE_OVERRIDE` | `sr1` | Fixa o release no SR1 |
+| `RELEASE_TRAVAS` | `{"s9":"sempre_visivel"}` | Libera o s9 fora de ordem |
+
+Valor inválido é ignorado e o padrão assume — o site não cai por causa de env var digitada
+errada. **Variável em branco conta como ausente**: até 25/09, `RELEASE_ADIANTAMENTO_DIAS`
+vazia (como vem do `.env.example`) era lida como zero, e a produção mostrava uma semana a menos
+do que o calendário prometia. Para zerar o adiantamento, escreva `0`. Para conferir o que a
+produção está usando, abra `/api/status` e veja `releasePublico`.
+
+## Receitas
+
+**Publicar o registro da semana.** Escreva `src/content/ciclos/sX.tsx`, aponte o carregador
+em `registro.ts`, rode `npm run verificar` e faça o commit. Na data do ciclo (menos sete
+dias) ele aparece sozinho.
+
+**Mostrar algo antes da hora, só numa apresentação.** Entre no painel, use o seletor de
+release ou uma trava `sempre_visivel`. Em produção isso vale só para a sua sessão — o que
+é exatamente o que você quer numa demonstração.
+
+**Conferir como estará no SR1.** Painel → "Ver como visitante", data simulada `2026-10-03`.
+A faixa do topo muda para laranja e mostra a data simulada.
+
+**Esconder um ciclo publicado por engano.** Trava `sempre_oculto` no ciclo. Em produção,
+`RELEASE_TRAVAS` + redeploy.
+
+**Voltar tudo ao normal.** Painel → "Limpar simulação". O overlay da sessão é apagado.
+
+## O link da vitrine pessoal
+
+Para só OLHAR o projeto completo, senha e painel são atrito. Com `CHAVE_VITRINE`
+configurada no ambiente, o link
+
+```
+https://<site>/vitrine/<chave>
+```
+
+grava um cookie assinado nesse navegador e ele passa a ver o site inteiro com a data
+simulada da vitrine (2027, semestre encerrado), como se a janela da ADR-021 estivesse
+aberta só para ele. Uma faixa discreta no topo lembra que aquilo não é o recorte público,
+com o caminho de saída (`/vitrine/sair`). O cookie dura 150 dias.
+
+O que o link NÃO dá: painel, faixa de admin, avanço de ciclo. É visão, não operação. Chave
+errada, chave curta ou variável ausente respondem o mesmo 404 de rota inexistente, e as
+tentativas passam por um limitador igual ao do login, num balde próprio. A chave é o link: escolha um valor longo e
+aleatório e não a versione. Trocar `CHAVE_VITRINE` fecha a porta para quem tem o link
+antigo; cookies já emitidos continuam valendo até expirar, e a revogação imediata é trocar
+`ADMIN_COOKIE_SECRET` (que também derruba as sessões do painel). Ver ADR-030 e
+docs/seguranca.md.
+
+## Conferir que nada vazou
+
+```bash
+npm run build
+npm run verificar-vazamento
+```
+
+O script sobe o servidor de produção e confere que nenhum marcador de ciclo não liberado
+aparece no HTML, no payload RSC ou em `.next/static`, que cada rota de funcionalidade não
+liberada responde 404, e que o admin continua vendo tudo.

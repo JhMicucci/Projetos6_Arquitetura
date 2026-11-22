@@ -1,0 +1,215 @@
+import { History, ListChecks, SlidersHorizontal } from 'lucide-react'
+import { Botao } from '@/components/base/botao'
+import { Num } from '@/components/base/num'
+import { Etiqueta } from '@/components/base/selo'
+import {
+  AcoesDaTela,
+  Aviso,
+  Painel,
+  Preservar,
+  SomenteLeitura,
+} from '@/components/sistema/base'
+import type { PropsTela } from '@/components/sistema/telas/tipos'
+import type { TipoEvento } from '@/lib/calculo/tipos'
+import { repositorio } from '@/lib/dados'
+import { carregarDados } from '@/lib/dados/consultas'
+import { ancoraDaTela } from '@/lib/sistema/parametros'
+
+const ROTULO_TIPO: Record<TipoEvento, string> = {
+  ciclo_criado: 'ciclo criado',
+  ciclo_estado_alterado: 'estado do ciclo',
+  indicador_criado: 'indicador criado',
+  indicador_alterado: 'indicador alterado',
+  regra_versionada: 'regra versionada',
+  lancamento_registrado: 'lançamento',
+  lancamento_alterado: 'lançamento corrigido',
+  lancamento_recusado: 'lançamento recusado',
+  avaliacao_calculada: 'avaliação',
+  contestacao_aberta: 'contestação aberta',
+  contestacao_respondida: 'contestação respondida',
+}
+
+const LIMITE = 120
+
+/**
+ * Quantos registros a tela LÊ para contar. Bem acima do histórico atual (a
+ * base de teste tem pouco mais de 560, e o banco soma o que as telas gravam):
+ * contar só os 500 primeiros fazia o total mentir quando julho entrou. Com o
+ * banco crescendo, a contagem deveria virar um `count(*)` no driver.
+ */
+const LIMITE_DE_LEITURA = 5000
+
+function Diff({
+  tipo,
+  antes,
+  depois,
+}: {
+  tipo: TipoEvento
+  antes: unknown
+  depois: unknown
+}) {
+  if (antes === null && depois === null) return null
+  // Recusa não tem "antes" nem "depois": nada foi gravado. Mostrar "antes:
+  // nada, é o primeiro registro" diria que a tentativa virou lançamento.
+  if (tipo === 'lancamento_recusado') {
+    return (
+      <div className="numero mt-1 text-xs">
+        <span className="text-alerta">nada foi gravado. tentativa: {JSON.stringify(depois)}</span>
+      </div>
+    )
+  }
+  return (
+    <div className="numero mt-1 flex flex-wrap gap-x-3 text-xs">
+      {antes !== null ? (
+        <span className="text-alerta">antes: {JSON.stringify(antes)}</span>
+      ) : (
+        <span className="text-apagado">antes: nada, é o primeiro registro</span>
+      )}
+      {depois !== null ? (
+        <span className="text-ok">depois: {JSON.stringify(depois)}</span>
+      ) : null}
+    </div>
+  )
+}
+
+export async function TelaAuditoria({ ctx }: PropsTela) {
+  const { aud_tipo: tipo, aud_ciclo: ciclo } = ctx.params
+
+  const dados = await carregarDados()
+  const todos = await repositorio().eventos(LIMITE_DE_LEITURA)
+  const totalLancamentos = (await repositorio().lancamentos()).length
+  const filtrados = todos.filter((evento) => {
+    if (tipo && evento.tipo !== tipo) return false
+    if (ciclo && !evento.entidade.includes(ciclo) && !evento.descricao.includes(ciclo))
+      return false
+    return true
+  })
+
+  return (
+    <>
+      <AcoesDaTela>
+        <SomenteLeitura />
+        <span className="text-xs text-apagado">
+          <Num>{todos.length}</Num> registros no histórico
+        </span>
+      </AcoesDaTela>
+
+      <div className="mb-5">
+        <Aviso>
+          Este histórico só recebe registros novos: ninguém edita nem apaga o que já aconteceu,
+          nem mesmo a SEAB. Correção entra como registro novo, com o valor antigo guardado
+          ao lado. É isso que faz o histórico servir de prova. O que aparece aqui é o histórico
+          gravado no banco de dados: o da base de teste, mais tudo o que foi feito nas telas.
+        </Aviso>
+      </div>
+
+      <Painel alvo="aud-filtros" titulo="Filtros" icone={SlidersHorizontal}>
+        <form
+          method="get"
+          action={`/sistema${ancoraDaTela('auditoria')}`}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <input type="hidden" name="abrir" value="auditoria" />
+          <Preservar params={ctx.params} exceto={['aud_tipo', 'aud_ciclo']} />
+
+          <div>
+            <label htmlFor="aud_tipo" className="rotulo">
+              Tipo de evento
+            </label>
+            <select
+              id="aud_tipo"
+              name="aud_tipo"
+              defaultValue={tipo ?? ''}
+              className="mt-1 block border border-linha px-2 py-1.5 text-sm"
+            >
+              <option value="">todos</option>
+              {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="aud_ciclo" className="rotulo">
+              Mês
+            </label>
+            <select
+              id="aud_ciclo"
+              name="aud_ciclo"
+              defaultValue={ciclo ?? ''}
+              className="numero mt-1 block border border-linha px-2 py-1.5 text-sm"
+            >
+              <option value="">todos</option>
+              {dados.ciclos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.competencia}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Botao type="submit" variante="contorno">
+            Filtrar
+          </Botao>
+        </form>
+      </Painel>
+
+      <Painel
+        alvo="aud-linha"
+        titulo="Linha do tempo" icone={History}
+        descricao={`Tudo o que aconteceu, do mais novo para o mais antigo. ${filtrados.length} registros de ${todos.length}; mostrando os ${Math.min(LIMITE, filtrados.length)} mais recentes.`}
+      >
+        <ol className="divide-y divide-linha border-y border-linha">
+          {filtrados.slice(0, LIMITE).map((evento) => (
+            <li key={evento.id} className="py-2.5">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <Num className="text-xs text-apagado">
+                  {evento.quando.slice(0, 16).replace('T', ' ')}
+                </Num>
+                <Etiqueta>{ROTULO_TIPO[evento.tipo]}</Etiqueta>
+                <span className="text-sm">{evento.descricao}</span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3">
+                <Num className="text-[0.65rem] text-apagado">
+                  {evento.entidade} · {evento.autor} ({evento.perfil})
+                </Num>
+              </div>
+              <Diff tipo={evento.tipo} antes={evento.antes} depois={evento.depois} />
+            </li>
+          ))}
+        </ol>
+
+        {filtrados.length === 0 ? (
+          <p className="text-sm text-apagado">Nenhum evento para este filtro.</p>
+        ) : null}
+      </Painel>
+
+      <Painel
+        alvo="aud-resumo"
+        titulo="Resumo" icone={ListChecks}
+        descricao="Quantos registros de cada tipo existem no histórico."
+      >
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {Object.entries(ROTULO_TIPO).map(([valor, rotulo]) => {
+            const quantidade = todos.filter((e) => e.tipo === valor).length
+            if (quantidade === 0) return null
+            return (
+              <li
+                key={valor}
+                className="flex items-baseline justify-between border border-linha px-3 py-1.5 text-sm"
+              >
+                <span>{rotulo}</span>
+                <Num>{quantidade}</Num>
+              </li>
+            )
+          })}
+        </ul>
+        <p className="mt-3 text-xs text-apagado">
+          {totalLancamentos} lançamentos em {dados.ciclos.length} ciclos.
+        </p>
+      </Painel>
+    </>
+  )
+}

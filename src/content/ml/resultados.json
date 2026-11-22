@@ -1,0 +1,148 @@
+{
+  "gerado_em": "2026-09-23",
+  "semente": 20262,
+  "commit": "628b773",
+  "versao_sklearn": "1.8.0",
+  "base": "planilha de desempenho por unidade, sem dado de pessoa, tratada em ml/notebooks",
+  "aviso": "Nenhum resultado desta lista entra no cálculo da gratificação.",
+  "modelos": [
+    {
+      "modelo": "classificacao",
+      "pergunta": "A unidade fica abaixo de 90% no resultado geral?",
+      "metodo": "CatBoost, escolhido entre XGBoost, LightGBM, CatBoost e o stacking dos três pelo F1 na validação cruzada em 5 partes. Hiperparâmetros por grid search, peso de classe e separação estratificada de 75% e 25%.",
+      "metricas": {
+        "acuracia": 1.0,
+        "precisao": 1.0,
+        "revocacao": 1.0,
+        "f1": 1.0,
+        "amostras_teste": 48,
+        "positivos_no_teste": 22,
+        "supera_referencia": true,
+        "importancias": [
+          {
+            "atributo": "desvio entre os indicadores",
+            "peso": 0.596
+          },
+          {
+            "atributo": "indicador 1: medicamentos e MMH",
+            "peso": 0.158
+          },
+          {
+            "atributo": "indicador 3 x indicador 4",
+            "peso": 0.111
+          },
+          {
+            "atributo": "tipo MAC",
+            "peso": 0.024
+          },
+          {
+            "atributo": "indicador 4: desempenho da unidade",
+            "peso": 0.021
+          },
+          {
+            "atributo": "tipo de unidade",
+            "peso": 0.019
+          },
+          {
+            "atributo": "indicadores na meta",
+            "peso": 0.018
+          },
+          {
+            "atributo": "indicador 3 abaixo da meta",
+            "peso": 0.014
+          }
+        ]
+      },
+      "referencia": {
+        "nome": "chutar sempre a classe mais comum",
+        "acuracia": 0.542
+      },
+      "limitacao": "O resultado geral é calculado a partir das mesmas notas, então o modelo aprende a regra da portaria. Serve para mostrar quais indicadores mais pesam, não para substituir o cálculo."
+    },
+    {
+      "modelo": "regressao",
+      "pergunta": "Qual resultado geral esperar a partir das notas dos indicadores?",
+      "metodo": "XGBoost com hiperparâmetros por grid search (500 árvores, profundidade 2). Validação cruzada em 5 partes e separação de 75% e 25%.",
+      "metricas": {
+        "mae": 0.0044,
+        "r2": 0.984,
+        "amostras_teste": 48,
+        "importancias": [
+          {
+            "atributo": "indicador 3: satisfação do usuário",
+            "peso": 0.731
+          },
+          {
+            "atributo": "indicador 1: medicamentos e MMH",
+            "peso": 0.083
+          },
+          {
+            "atributo": "indicador 3 x indicador 4",
+            "peso": 0.078
+          },
+          {
+            "atributo": "indicador 2: gestão do trabalho",
+            "peso": 0.053
+          },
+          {
+            "atributo": "desvio entre os indicadores",
+            "peso": 0.03
+          },
+          {
+            "atributo": "taxa de atendimento do indicador 1",
+            "peso": 0.013
+          },
+          {
+            "atributo": "indicador 4: desempenho da unidade",
+            "peso": 0.012
+          },
+          {
+            "atributo": "média dos blocos do indicador 4",
+            "peso": 0.0
+          }
+        ]
+      },
+      "referencia": {
+        "nome": "média do treino",
+        "mae": 0.0701
+      },
+      "limitacao": "O resultado geral é uma soma ponderada das mesmas notas, por isso o erro é tão baixo. O modelo mostra o que mais pesa, não substitui o cálculo."
+    },
+    {
+      "modelo": "clustering",
+      "pergunta": "Quais unidades têm desempenho parecido nos quatro indicadores?",
+      "metodo": "K-Means com k=4, escolhido pelo cotovelo e pela silhueta, sobre as notas dos quatro indicadores padronizadas.",
+      "metricas": {
+        "silhueta": 0.71,
+        "k": 4,
+        "grupos": [
+          {
+            "nome": "grupo 2: maioria MAC",
+            "unidades": 12,
+            "resultado_medio": 1.237
+          },
+          {
+            "nome": "grupo 3: maioria USF",
+            "unidades": 73,
+            "resultado_medio": 0.949
+          },
+          {
+            "nome": "grupo 1: maioria USF",
+            "unidades": 100,
+            "resultado_medio": 0.893
+          },
+          {
+            "nome": "grupo 4: maioria USF",
+            "unidades": 5,
+            "resultado_medio": 0.786
+          }
+        ]
+      },
+      "referencia": {
+        "nome": "silhueta de referência",
+        "observacao": "acima de 0,5 indica separação nítida"
+      },
+      "limitacao": "Agrupa unidades, nunca pessoas. Os grupos refletem sobretudo o tipo de unidade."
+    }
+  ]
+}

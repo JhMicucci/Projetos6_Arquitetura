@@ -1,0 +1,201 @@
+# Segurança
+
+Este documento cobre o sistema **e o próprio mecanismo administrativo do site** (§7). A
+superfície de ataque que a equipe criou para si mesma é analisada aqui com a mesma régua
+usada para o resto — esconder isso seria pior do que ter o risco.
+
+## STRIDE
+
+| Ameaça | Onde se aplica | Mitigação atual | Estado |
+| --- | --- | --- | --- |
+| **S**poofing — fingir ser quem opera o painel | Painel `/admin` | Senha única conferida só no servidor, em tempo constante; cookie httpOnly assinado com HMAC-SHA256; 30 dias de validade | Implementado |
+| **S**poofing — fingir ser outro perfil no sistema | Seletor de perfil, login | Escrever exige login (ADR-051): senha com hash scrypt, sessão em JWE (AES-256-GCM) num cookie `httpOnly` e `SameSite=Strict` (ADR-052), conferida no banco a cada requisição e revogada ao trocar a senha. O seletor ficou só para o visitante, que navega e não grava | Implementado |
+| **T**ampering — adulterar o cookie de sessão | `/admin/*` | Payload assinado; qualquer alteração invalida a assinatura; comparação em tempo constante | Implementado |
+| **T**ampering — adulterar o overlay de visão | Cookie `prumo_visao` | Mesmo esquema de assinatura; conteúdo revalidado com zod após verificar a assinatura | Implementado |
+| **T**ampering — alterar resultado já homologado | Motor de cálculo | Regra versionada: alterar cria nova versão e não toca na vigente; recálculo do ciclo antigo reproduz o mesmo número | Implementado |
+| **R**epudiation — negar que informou um valor | Lançamentos | Trilha append-only com autor, timestamp, antes e depois; correção entra como novo evento. Em memória, depende de a camada de escrita ser o único caminho; no schema guardado, um gatilho garante o mesmo até para a service role | Parcial |
+| **I**nformation disclosure — vazar conteúdo de release futuro | Registro e telas | Gate no servidor; carregadores preguiçosos; `import 'server-only'`; rota não liberada devolve 404; verificação automatizada em CI | Implementado e testado |
+| **I**nformation disclosure — vazar dado pessoal | O seed do site e `ml/data/` | Dado de pessoa nunca entra. O seed é sintético, com semente fixa, e `seed.test.ts` recusa CPF, e-mail, telefone e matrícula. A base por unidade da SESAU entra em `ml/data/` com autorização da Secretaria (ADR-044), e `dados-do-cliente.test.ts` a varre inteira, linha a linha. O teste não pega identificação indireta: 39 combinações tipo × distrito têm uma linha só, e a autorização por escrito para publicar ainda falta (ver `privacidade.md`) | Parcial |
+| **D**enial of service — força bruta no login | `/api/admin/entrar` | 5 tentativas por 10 minutos por IP, com erro genérico | Parcial — ver limitação abaixo |
+| **D**enial of service — sobrecarga da aplicação | Toda a aplicação | Limites da plataforma (Vercel); páginas leves e sem consulta pesada | Delegado à plataforma |
+| **E**levation of privilege — acessar `/admin` sem sessão | `/admin/*`, `/api/admin/*` | Middleware **e** revalidação da sessão dentro de cada page e route handler | Implementado |
+| **E**levation of privilege — agir fora do próprio perfil | APIs do sistema | Cada route handler confere o perfil antes de agir e recusa com motivo | Implementado (sobre login simulado) |
+| **E**levation of privilege — abrir tela de outro perfil pela URL | As 8 telas do sistema | `exigirPerfil` roda antes de qualquer renderização e devolve 404, não 403. Vale também para as rotas antigas, que só redirecionam depois do gate. Teste percorre 8 telas × 4 perfis (ADR-023) | Implementado (sobre login simulado) |
+| **T**ampering — adulterar a demonstração alheia | `/api/sistema/ciclo` | A transição do ciclo não volta atrás. Exige sessão de admin (`exigirAdmin`), e o controle não é renderizado para quem não a tem | Implementado |
+
+## OWASP Top 10 (2021) — estado
+
+| Risco | Estado | Observação |
+| --- | --- | --- |
+| A01 Quebra de controle de acesso | **Parcial** | Painel protegido em duas camadas, e o avanço de ciclo passou a exigir a mesma sessão. As oito telas passaram a conferir o perfil no servidor, com 404 para quem não tem direito (ADR-023) — mas o perfil ainda vem de seletor simulado, então isto organiza, não protege. As políticas de RLS existem e estão testadas, e não estão ligadas ao app |
+| A02 Falhas criptográficas | **Coberto** | HMAC-SHA256 via Web Crypto; segredo só em env; nenhuma senha persistida |
+| A03 Injeção | **Coberto** | O app não emite SQL; toda entrada validada por zod; JSX escapa saída por padrão. O script de semeadura usa consultas parametrizadas |
+| A04 Design inseguro | **Coberto** | Regra versionada e auditoria append-only são decisões de design contra adulteração |
+| A05 Configuração incorreta | **Parcial** | CSP, X-Frame-Options, nosniff, Referrer-Policy e HSTS aplicados. CSP ainda usa `unsafe-inline` |
+| A06 Componentes vulneráveis | **Parcial** | `npm audit` acusa 3 avisos altos transitivos do Next (postcss, sharp), corrigíveis só com Next 16 — fora do escopo fixado no briefing. São dependências de build, não de runtime da aplicação |
+| A07 Falhas de identificação | **Parcial** | O /sistema autentica quem escreve (ADR-051): scrypt, bloqueio da conta no banco após 5 erros, limite por IP, resposta e tempo iguais para login inexistente e senha errada. Falta MFA. O painel administrativo continua com senha única pública no briefing, e por isso deixou de autorizar o avanço de etapa |
+| A08 Integridade de software e dados | **Coberto** | Conteúdo versionado no Git; painel não edita conteúdo por formulário |
+| A09 Falhas de log e monitoração | **Parcial** | Auditoria da aplicação é completa; log de acesso fica com a plataforma |
+| A10 SSRF | **N/A** | A aplicação não faz requisição a URL informada por usuário |
+
+## O mecanismo de admin como superfície de ataque
+
+O painel foi criado pela equipe para controlar o que o professor vê. Isso é, por
+definição, um alvo. Os riscos, sem maquiagem:
+
+**A senha padrão `0321` é pública.** Ela está no briefing da disciplina e neste
+repositório, que é público. Quem ler o enunciado consegue entrar num deploy que não trocou
+`ADMIN_SENHA`. Mitigação: trocar a variável no ambiente de produção. Enquanto não for
+trocada, o risco real é limitado — o painel não edita conteúdo, não expõe dado pessoal e
+só controla a data de liberação de material que será público de qualquer forma.
+
+**Nada no site aponta para o painel.** O rodapé já teve um ponto discreto levando a
+`/admin/entrar`; ele saiu na ADR-015, porque um link rotulado "Painel administrativo" é
+encontrado por Ctrl+F, por leitor de tela e por quem passa o mouse no canto. Isso reduz o
+tropeço, **não** é controle de acesso: este repositório é público e este próprio documento
+descreve o mecanismo, como o §7 exige. Quem protege é a senha trocada em produção.
+
+**Autenticação por senha única, sem identidade.** Não há usuário, não há MFA, não há
+revogação individual. Todo mundo da equipe usa a mesma senha, e o log de liberações
+registra "painel" como autor. É adequado para seis pessoas num semestre; não seria para
+um sistema real.
+
+**Rate limit é best-effort.** O contador vive na memória do processo. Em serverless há
+várias instâncias e elas reciclam: um atacante distribuído ganha tentativas extras a cada
+instância fria. Está assim declarado no código (`src/lib/admin/rate-limit.ts`). **A F3 não
+mudou isso**: o painel administrativo não usa Supabase Auth, então o contador continua em
+memória. Movê-lo para uma tabela é trabalho pendente, e não fingimos o contrário.
+
+**Middleware não é suficiente sozinho.** Já houve classe de bug no Next em que o
+middleware podia ser contornado por cabeçalho forjado. Por isso toda page e todo route
+handler de `/admin` revalidam a sessão por conta própria (`exigirAdmin`), e a falha
+devolve **404**, não 401 — não confirmamos a existência do painel para quem não deveria
+saber dele.
+
+**Sem segredo, o painel deixa de existir.** Em produção, `ADMIN_COOKIE_SECRET` ausente ou
+menor que 16 caracteres faz o painel falhar fechado. Preferimos indisponibilidade a
+assinar cookie com valor previsível.
+
+## O RBAC: o que está escrito e o que está ligado
+
+Vale distinguir duas coisas que costumam ser confundidas.
+
+**Escrito e testado.** `supabase/migrations/` traz o RBAC como políticas de RLS: quem gere
+alcança tudo, quem informa só alcança o próprio recorte, o avaliado só a própria
+avaliação, quem fiscaliza lê e não escreve. Mais quatro invariantes em gatilho, que valem
+inclusive para a service role: trilha append-only, transição de ciclo um passo por vez,
+janela de lançamento e regra imutável. São 21 verificações contra um PostgreSQL real
+(`npm run testar-rls`). Atenção: essas políticas ainda usam os papéis anteriores à
+remodelagem pós-reunião (ADR-034); a pendência está declarada em `banco.md`.
+
+**Os papéis do app hoje** são os quatro que o cliente nomeou: coordenação da SEAB (gere a
+régua e o ciclo), administrador (plataforma e trilha, sem tocar em nota), gerente
+distrital (o recorte do próprio distrito, com revisão na janela) e gerente de unidade (os
+próprios subindicadores e a própria nota). O recorte roda no servidor, tela a tela
+(`exigirPerfil`, 404 para quem não tem direito), sobre o seletor simulado.
+
+**Ligado ao app.** Nada disso. O app não usa banco (ADR-011): o perfil vem de um seletor
+simulado, sem autenticação, e quem separa as visões é a própria aplicação. Isso é adequado
+para um protótipo com dados sintéticos e inadequado para qualquer coisa além disso — e é por
+isso que a tela diz "Perfil simulado" em vez de fingir um login.
+
+A consequência prática precisa ser dita com precisão, porque a formulação óbvia erra o alvo.
+**Num deploy público, qualquer visitante troca de perfil** — e isso é quase inofensivo: o
+perfil é cookie do próprio visitante, ninguém afeta ninguém, e não há dado real para ver.
+
+O que importava era a **escrita em estado compartilhado**. Até a semana do SR1,
+`src/lib/sistema/estado.ts` guardava as alterações em variáveis de módulo, na memória do
+processo, e elas valiam para todos os visitantes daquela instância: o lançamento de um
+avaliador aparecia na tela do outro. **Antes do SR1, a escrita do protótipo passou a ser
+isolada por visitante:** cada visitante escreve numa cópia própria. Desde 03/10 essa cópia
+sai de um diário no cookie `prumo_diario` do próprio navegador (ADR-048), e o cookie é
+**assinado** com HMAC-SHA256, com o segredo do painel em chave própria: quem edita o diário à
+mão perde a assinatura e volta para a base pura. Isso importa porque a credencial de avançar
+etapa fica na rota; um diário forjado seria um jeito de escrever pulando a rota. O diário
+também é validado por esquema, descompactado com teto de tamanho e limitado a cerca de 4 KB.
+
+Três ações escrevem, e elas não são equivalentes:
+
+| Ação | Quem pode | Por quê |
+| --- | --- | --- |
+| Avançar o estado do ciclo | **Só com sessão de admin** (ADR-015); o controle nem aparece para os demais | Não volta atrás pela interface: sair de `lancamento_aberto` fecha a janela de lançamento |
+| Registrar lançamento | Qualquer visitante | É o fluxo que a banca precisa experimentar; entra na trilha com autor e timestamp |
+| Abrir contestação | Qualquer visitante | Mesma razão; entra na lista do ciclo |
+
+O risco residual é o de qualquer protótipo com escrita aberta: alguém enche de lançamentos
+a própria cópia. Fica só no navegador dele, some quando ele fecha, aparece na trilha e não
+expõe ninguém. Quando o diário não cabe mais no cookie, a escrita é recusada com aviso.
+
+## O link da vitrine pessoal como superfície de ataque
+
+A ADR-030 criou uma URL-capacidade: `/vitrine/<chave>` concede, a quem tem a chave, a visão
+do site inteiro com data simulada. Régua igual à do resto:
+
+- **O que a chave protege.** Só leitura antecipada de conteúdo acadêmico que será público ao
+  longo do semestre. Nenhum dado de pessoa, nenhuma escrita: o link não dá painel, não avança
+  ciclo, não edita nada. O pior cenário de vazamento do link é alguém ver as entregas antes
+  da data, que é exatamente o que a janela da vitrine já faz de propósito quando aberta.
+- **Formato e conferência.** A chave vem de `CHAVE_VITRINE` (mínimo 16 caracteres; ausente ou
+  curta, a rota falha fechada com 404). A conferência usa o mesmo caminho da senha do painel:
+  HMAC dos dois lados e comparação em tempo constante, então nem o conteúdo nem o comprimento
+  vazam pelo tempo de resposta. Chave errada passa por um limitador de tentativas com o mesmo
+  mecanismo do login, mas num balde próprio por IP: balde compartilhado deixaria o acerto
+  da chave zerar o contador de senhas erradas do painel, e chutes de chave bloqueariam o
+  login do admin. A resposta é o mesmo 404 de rota inexistente.
+- **O cookie.** `prumo_vitrine`, httpOnly, validade de 150 dias, assinado com um segredo
+  DERIVADO de `ADMIN_COOKIE_SECRET`, e não com ele diretamente. A derivação é separação de
+  domínio: sem ela, o payload da vitrine satisfaria os campos que `sessaoValida` confere, e
+  copiar o valor de `prumo_vitrine` para `prumo_admin` viraria uma sessão administrativa.
+  Há teste de unidade provando a recusa nas duas direções. Presença de cookie sem
+  assinatura válida não concede nada.
+- **URL é lugar ruim para segredo, e está declarado.** A chave aparece no histórico do
+  navegador de quem a usa e pode aparecer em logs de acesso da plataforma. É um risco aceito
+  para este caso (capacidade de leitura, dados sintéticos); num sistema real, capacidade em
+  URL pediria expiração curta e uso único.
+- **Revogação em dois níveis.** Trocar `CHAVE_VITRINE` impede novos acessos pelo link antigo,
+  mas NÃO invalida cookies já emitidos, que valem até expirar. A revogação imediata é trocar
+  `ADMIN_COOKIE_SECRET`, que derruba junto as sessões do painel. A assimetria está aqui por
+  escrito para ninguém descobri-la durante um incidente.
+
+## Limitações conhecidas
+
+1. O seletor de perfil não é autenticação. Está rotulado como tal no código e na tela, mas
+   num deploy público qualquer pessoa alterna entre os quatro perfis. A única credencial real
+   do projeto é a sessão de admin, e ela não vem do seletor.
+2. A camada de escrita do sistema não tem banco: o que se escreve fica num diário assinado
+   no cookie do navegador e some quando ele fecha (ADR-048). Lançamento e contestação seguem
+   abertos a qualquer visitante, por decisão, e cada visitante só enxerga o que ele mesmo
+   escreveu: ver a tabela acima.
+3. Esconder o link do painel é redução de tropeço, não segurança. O repositório é público e
+   este documento descreve o mecanismo; a proteção efetiva é `ADMIN_SENHA` trocada em produção.
+4. A CSP usa `'unsafe-inline'` em `script-src` e `style-src`. O próximo passo é nonce por
+   requisição.
+5. Não há proteção CSRF explícita além de `sameSite=lax` — suficiente para formulários
+   `POST` de mesma origem, insuficiente se algum dia houver API pública.
+6. A base por unidade da SESAU em `ml/data/` é pública, porque o repositório é. Dado de
+   pessoa não entra, e há teste que varre o diretório inteiro. Mas 39 das 90 combinações
+   tipo × distrito têm uma linha só, o que pode apontar a unidade e, por ela, o gerente. A
+   análise e as opções estão em `privacidade.md`.
+
+## O login do /sistema (ADR-051)
+
+Quem escreve no banco entra com conta; quem não entra navega e não grava.
+
+| Peça | Como é feita | Por quê |
+| --- | --- | --- |
+| Senha | Hash **scrypt** (N=2^15, r=8, p=1, 32 MiB) com sal aleatório de 16 bytes, em `src/lib/auth/cripto.ts` | Senha não se cifra: cifra é reversível. Hash lento com sal torna força bruta cara, até em GPU, e duas senhas iguais viram hashes diferentes |
+| Sessão | **JWE** (JWT cifrado, RFC 7516) com `alg: dir` e `enc: A256GCM` no cookie `prumo_sessao`: `httpOnly`, `SameSite=Strict`, `Secure` em produção, 8 horas. A abertura aceita só esse algoritmo e essa cifra e confere emissor, audiência e validade (ADR-052) | Ninguém lê nem altera o conteúdo; JWT só assinado, `alg: none` e outra cifra são recusados; outro site não consegue usar a sessão |
+| Chave da sessão | `SESSAO_CHAVE`, 32 bytes. Em produção, sem ela o login falha **fechado** | Melhor ninguém entrar do que todo mundo entrar com chave previsível |
+| Revogação | O cookie leva a versão da sessão; trocar a senha ou desativar a conta sobe a versão no banco | Sessão roubada para de valer na hora, sem esperar vencer |
+| Adivinhação | Limite por IP (memória) e bloqueio da **conta** no banco: 5 erros seguidos, 15 minutos | O do banco vale entre instâncias e sobrevive a reinício |
+| Enumeração | Login inexistente, conta bloqueada e senha errada dão a mesma mensagem e passam pelo mesmo scrypt | Nem o texto nem o relógio contam quais logins existem |
+| Autorização | Lançar, contestar e avançar etapa conferem a conta no servidor. Gerente só pela própria unidade (ou distrito); avançar etapa só a SEAB | O id da unidade vem do formulário e pode ser trocado à mão |
+| CSRF | Cookie `SameSite=Strict`: o navegador só manda a sessão em requisição nascida no próprio site. Sair também é `POST` | Formulário, imagem ou link de outro site chegam sem sessão |
+| Dado pessoal | Login técnico (`seab`, `ger-usf-canario`), sem nome, e-mail ou CPF | Regra 1 da casa (LGPD) |
+
+As credenciais do **banco** não ficam no código nem em variável com a senha: em produção, a
+aplicação recebe só o nome do segredo no AWS Secrets Manager (`DATABASE_SECRET_ID`) e lê
+usuário e senha com o papel IAM de quem roda. Ver `docs/banco.md`.
+
+Ainda falta: MFA, RLS por perfil no schema ligado (hoje a aplicação confere; o banco não
+filtra por conta) e trocar a senha pública do painel administrativo.
