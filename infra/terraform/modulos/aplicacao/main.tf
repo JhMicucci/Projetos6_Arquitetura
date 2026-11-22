@@ -55,6 +55,16 @@ locals {
 
   ambiente_extra = [for nome, valor in var.variaveis_app : { name = nome, value = valor }]
 
+  # O Fargate põe o nome da máquina em HOSTNAME e passa por cima do ENV da
+  # imagem. O servidor do Next escuta nesse endereço: ficava só no IP da
+  # tarefa, e o health check em 127.0.0.1 nunca o achava (visto no primeiro
+  # deploy: as tarefas caíam por "failed container health checks"). Como
+  # variável da task definition, o valor vence.
+  ambiente_servidor = [
+    { name = "HOSTNAME", value = "0.0.0.0" },
+    { name = "PORT", value = tostring(var.porta_app) },
+  ]
+
   estrategia = var.usar_spot ? [
     { provedor = "FARGATE", base = 1, peso = 0 },
     { provedor = "FARGATE_SPOT", base = 0, peso = 1 },
@@ -212,7 +222,7 @@ resource "aws_ecs_task_definition" "app" {
       readonlyRootFilesystem = true
       portMappings           = [{ containerPort = var.porta_app, protocol = "tcp" }]
       dependsOn              = [{ containerName = "migrador", condition = "SUCCESS" }]
-      environment            = concat(local.ambiente_banco, local.ambiente_otel, local.ambiente_extra)
+      environment            = concat(local.ambiente_servidor, local.ambiente_banco, local.ambiente_otel, local.ambiente_extra)
       secrets                = local.segredos_app
       mountPoints = [
         { sourceVolume = "tmp", containerPath = "/tmp", readOnly = false },
