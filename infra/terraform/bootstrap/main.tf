@@ -18,7 +18,7 @@ terraform {
 variable "regiao" {
   description = "Região do bucket de state."
   type        = string
-  default     = "sa-east-1"
+  default     = "us-east-1"
 }
 
 variable "projeto" {

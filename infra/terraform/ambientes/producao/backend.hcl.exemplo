@@ -1,6 +1,7 @@
-# Copie para backend.hcl e preencha com a saída do bootstrap:
-#   terraform -chdir=infra/terraform/bootstrap output -raw backend_hcl > infra/terraform/ambientes/producao/backend.hcl
-# Depois: terraform init -backend-config=backend.hcl
+# Copie para backend.hcl (ignorado pelo Git) com a saída do bootstrap:
+#   terraform -chdir=infra/terraform/bootstrap output -raw backend_hcl | Out-File -Encoding ascii infra/terraform/ambientes/producao/backend.hcl
+# Depois: terraform init "-backend-config=backend.hcl"
+# (no PowerShell, o argumento entre aspas: sem elas, o ponto quebra o argumento)
 
 bucket = "prumo-tfstate-123456789012"
-region = "sa-east-1"
+region = "us-east-1"

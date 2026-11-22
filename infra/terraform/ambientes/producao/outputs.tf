@@ -1,34 +1,44 @@
 output "url_site" {
   description = "Endereço público do site."
-  value       = local.url_site
+  value       = "https://${local.dominio}"
 }
 
-output "ip_publico" {
-  description = "Elastic IP da instância (aponte o registro A do domínio para cá)."
-  value       = module.servidor.ip_publico
+output "url_grafana" {
+  description = "Grafana (só abre do IP autorizado)."
+  value       = module.observabilidade.url_grafana
 }
 
-output "pipeline" {
-  description = "Nome do pipeline no CodePipeline."
-  value       = module.pipeline.nome
+output "cluster_ecs" {
+  description = "Cluster ECS."
+  value       = module.aplicacao.cluster
 }
 
-output "conexao_github_status" {
-  description = "Se PENDING, aprove a conexão no console antes do primeiro deploy (docs/pipeline.md)."
-  value       = module.pipeline.conexao_github_status
+output "servico_ecs" {
+  description = "Serviço ECS do app."
+  value       = module.aplicacao.servico
 }
 
-output "conexao_github_arn" {
-  description = "ARN da conexão com o GitHub."
-  value       = module.pipeline.conexao_github_arn
+output "imagem_em_uso" {
+  description = "Imagem do app implantada."
+  value       = local.imagem_app
 }
 
-output "comando_sessao" {
-  description = "Shell na instância, sem SSH e sem porta 22."
-  value       = "aws ssm start-session --region ${var.regiao} --target ${module.servidor.instancia_id}"
+output "versao_aurora" {
+  description = "Versão do Aurora PostgreSQL."
+  value       = module.banco.versao_motor
 }
 
-output "comando_senha_admin" {
-  description = "Lê a senha do painel administrativo."
-  value       = "aws ssm get-parameter --region ${var.regiao} --with-decryption --name ${module.segredos.parametro_senha_admin} --query Parameter.Value --output text"
+output "comando_senha_grafana" {
+  description = "Lê a senha do admin do Grafana."
+  value       = "aws ssm get-parameter --region ${var.regiao} --with-decryption --name ${module.observabilidade.parametro_senha} --query Parameter.Value --output text"
+}
+
+output "comando_senha_painel" {
+  description = "Lê a senha do painel administrativo do site."
+  value       = "aws secretsmanager get-secret-value --region ${var.regiao} --secret-id ${module.segredos.nome} --query SecretString --output text"
+}
+
+output "comando_sessao_observabilidade" {
+  description = "Terminal na EC2 de observabilidade, sem SSH."
+  value       = "aws ssm start-session --region ${var.regiao} --target ${module.observabilidade.instancia_id}"
 }

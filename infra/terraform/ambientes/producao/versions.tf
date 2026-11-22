@@ -14,9 +14,10 @@ terraform {
   }
 
   # Configuração parcial: bucket e região vêm do backend.hcl, que sai do
-  # bootstrap (infra/terraform/bootstrap). Ver backend.hcl.exemplo.
+  # bootstrap (infra/terraform/bootstrap). No pipeline, o CodeBuild passa os
+  # mesmos valores.
   backend "s3" {
-    key          = "prumo/producao/terraform.tfstate"
+    key          = "prumo/producao/infra.tfstate"
     encrypt      = true
     use_lockfile = true
   }

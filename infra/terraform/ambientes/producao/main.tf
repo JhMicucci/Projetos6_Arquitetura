@@ -1,10 +1,13 @@
 # Ambiente de produção do Prumo na AWS: a composição dos módulos.
 #
-#   criptografia ─┬─> rede ──────┐
-#                 ├─> registro ──┼─> servidor ─> entrega ─> pipeline
-#                 └─> segredos <─┘   (o domínio sai do Elastic IP)
+#   Usuários ──> CloudFront + ACM ──> ALB (públicas) ──> ECS Fargate (app) ──> Aurora (dados)
+#                                                         │
+#                                                         └─OTLP─> EC2 de observabilidade
 #
-# Passo a passo de criação e operação: docs/pipeline.md.
+# Esta raiz é aplicada PELO PIPELINE (estágio Deploy), com a tag da imagem do
+# commit em `versao_imagem`. O pipeline, o ECR e o bucket de artefatos vivem
+# em outra raiz (infra/terraform/cicd), para o pipeline não aplicar a si mesmo.
+# Passo a passo: docs/pipeline.md.
 
 provider "aws" {
   region = var.regiao
@@ -14,28 +17,22 @@ provider "aws" {
       Projeto       = var.projeto
       Ambiente      = var.ambiente
       GerenciadoPor = "terraform"
-      Repositorio   = var.repositorio_github
     }
   }
 }
 
-data "aws_caller_identity" "atual" {}
+# O repositório de imagens é criado pela raiz do CI/CD; aqui só é lido.
+data "aws_ecr_repository" "app" {
+  name = var.repositorio_ecr
+}
 
 locals {
   nome         = "${var.projeto}-${var.ambiente}"
   prefixo_logs = "/${var.projeto}/${var.ambiente}"
+  dominio      = "${var.subdominio}.${var.zona_dns}"
 
-  caminho_app         = "/${var.projeto}/${var.ambiente}/app"
-  caminho_implantacao = "/${var.projeto}/${var.ambiente}/implantacao"
-
-  # Sem domínio próprio, o sslip.io resolve <ip-com-hifens>.sslip.io para o
-  # próprio IP, e isso basta para o Let's Encrypt emitir um certificado.
-  dominio = (
-    var.dominio != ""
-    ? var.dominio
-    : "${replace(module.servidor.ip_publico, ".", "-")}.sslip.io"
-  )
-  url_site = "https://${local.dominio}"
+  imagem_app      = "${data.aws_ecr_repository.app.repository_url}:${var.versao_imagem}"
+  imagem_migrador = "${data.aws_ecr_repository.app.repository_url}:migrador-${var.versao_imagem}"
 }
 
 module "criptografia" {
@@ -51,87 +48,122 @@ module "rede" {
   nome               = local.nome
   prefixo_logs       = local.prefixo_logs
   chave_kms_arn      = module.criptografia.chave_arn
-  cidrs_entrada      = var.cidrs_entrada
   retencao_logs_dias = var.retencao_logs_dias
 }
 
-module "registro" {
-  source = "../../modulos/registro"
+module "grupos_seguranca" {
+  source = "../../modulos/grupos-seguranca"
 
   nome          = local.nome
-  chave_kms_arn = module.criptografia.chave_arn
+  vpc_id        = module.rede.vpc_id
+  cidrs_grafana = var.cidrs_grafana
 }
 
-module "servidor" {
-  source = "../../modulos/servidor"
+# Endpoints de interface numa zona só (a primeira), por FinOps.
+module "endpoints" {
+  source = "../../modulos/endpoints"
 
-  nome                           = local.nome
-  conta_id                       = data.aws_caller_identity.atual.account_id
-  prefixo_logs                   = local.prefixo_logs
-  vpc_id                         = module.rede.vpc_id
-  subrede_id                     = module.rede.subrede_publica_id
-  tipo_instancia                 = var.tipo_instancia
-  cidrs_entrada                  = var.cidrs_entrada
-  chave_kms_arn                  = module.criptografia.chave_arn
-  repositorio_ecr_arn            = module.registro.arn
-  bucket_artefatos_arn           = module.pipeline.bucket_artefatos_arn
-  caminho_parametros_app         = local.caminho_app
-  caminho_parametros_implantacao = local.caminho_implantacao
-  retencao_logs_dias             = var.retencao_logs_dias
+  nome               = local.nome
+  vpc_id             = module.rede.vpc_id
+  subredes           = [module.rede.subredes_app[0]]
+  grupo_seguranca_id = module.grupos_seguranca.endpoints_id
+  tabela_privada_id  = module.rede.tabela_privada_id
 }
 
-# Registro A (e CAA) do domínio próprio, quando a zona está no Route 53 desta
-# conta. Criado no mesmo apply que o Elastic IP: quando o primeiro deploy subir
-# o Caddy, o DNS já resolve e o Let's Encrypt consegue validar.
-module "dns" {
-  source = "../../modulos/dns"
-  count  = var.zona_route53 != "" && var.dominio != "" ? 1 : 0
+module "banco" {
+  source = "../../modulos/banco"
 
-  zona    = var.zona_route53
-  dominio = var.dominio
-  ip      = module.servidor.ip_publico
+  nome               = local.nome
+  subredes           = module.rede.subredes_dados
+  grupo_seguranca_id = module.grupos_seguranca.banco_id
+  chave_kms_arn      = module.criptografia.chave_arn
+  acu_minima         = var.aurora_acu_minima
+  acu_maxima         = var.aurora_acu_maxima
 }
 
 module "segredos" {
   source = "../../modulos/segredos"
 
-  caminho_app         = local.caminho_app
-  caminho_implantacao = local.caminho_implantacao
-  chave_kms_arn       = module.criptografia.chave_arn
-  versao_segredos     = var.versao_segredos
-  variaveis_app       = var.variaveis_app
-
-  configuracao_implantacao = {
-    DOMINIO    = local.dominio
-    EMAIL_ACME = var.email_acme != "" ? var.email_acme : "-"
-  }
+  nome            = local.nome
+  chave_kms_arn   = module.criptografia.chave_arn
+  versao_segredos = var.versao_segredos
 }
 
-module "entrega" {
-  source = "../../modulos/entrega"
+module "observabilidade" {
+  source = "../../modulos/observabilidade"
 
-  nome      = local.nome
-  tag_chave = module.servidor.tag_implantacao_chave
-  tag_valor = module.servidor.tag_implantacao_valor
+  nome               = local.nome
+  subrede_id         = module.rede.subredes_publicas[0]
+  cidr_subrede       = module.rede.cidrs_publicas[0]
+  grupo_seguranca_id = module.grupos_seguranca.observabilidade_id
+  chave_kms_arn      = module.criptografia.chave_arn
+  tipo_instancia     = var.tipo_instancia_observabilidade
 }
 
-module "pipeline" {
-  source = "../../modulos/pipeline"
+module "certificado" {
+  source = "../../modulos/certificado"
 
-  nome                     = local.nome
-  prefixo_logs             = local.prefixo_logs
-  chave_kms_arn            = module.criptografia.chave_arn
-  repositorio_github       = var.repositorio_github
-  branch                   = var.branch
-  conexao_github_arn       = var.conexao_github_arn
-  repositorio_ecr_url      = module.registro.url
-  repositorio_ecr_arn      = module.registro.arn
-  codedeploy_aplicacao     = module.entrega.aplicacao
-  codedeploy_aplicacao_arn = module.entrega.aplicacao_arn
-  codedeploy_grupo         = module.entrega.grupo
-  dominio                  = local.dominio
-  url_site                 = local.url_site
-  url_repositorio          = "https://github.com/${var.repositorio_github}"
-  exigir_aprovacao         = var.exigir_aprovacao
-  retencao_logs_dias       = var.retencao_logs_dias
+  zona    = var.zona_dns
+  dominio = local.dominio
+}
+
+module "balanceador" {
+  source = "../../modulos/balanceador"
+
+  nome               = local.nome
+  vpc_id             = module.rede.vpc_id
+  subredes           = module.rede.subredes_publicas
+  grupo_seguranca_id = module.grupos_seguranca.alb_id
+}
+
+module "borda" {
+  source = "../../modulos/borda"
+
+  dominio                = local.dominio
+  certificado_arn        = module.certificado.arn
+  dns_origem             = module.balanceador.dns
+  valor_cabecalho_origem = module.balanceador.valor_cabecalho_origem
+}
+
+module "dns" {
+  source = "../../modulos/dns"
+
+  zona_id            = module.certificado.zona_id
+  dominio            = local.dominio
+  dominio_cloudfront = module.borda.dominio_cloudfront
+  zona_cloudfront    = module.borda.zona_cloudfront
+}
+
+module "aplicacao" {
+  source = "../../modulos/aplicacao"
+
+  nome               = local.nome
+  prefixo_logs       = local.prefixo_logs
+  chave_kms_arn      = module.criptografia.chave_arn
+  subredes           = module.rede.subredes_app
+  grupo_seguranca_id = module.grupos_seguranca.app_id
+  grupo_alvo_arn     = module.balanceador.grupo_alvo_arn
+  imagem_app         = local.imagem_app
+  imagem_migrador    = local.imagem_migrador
+  segredo_app_arn    = module.segredos.arn
+  chaves_segredo_app = module.segredos.chaves
+  segredo_banco_arn  = module.banco.segredo_arn
+  endpoint_otlp      = module.observabilidade.endpoint_otlp
+  variaveis_app      = var.variaveis_app
+  quantidade_tarefas = var.quantidade_tarefas
+  usar_spot          = var.usar_fargate_spot
+  cpu                = var.cpu_tarefa
+  memoria            = var.memoria_tarefa
+  retencao_logs_dias = var.retencao_logs_dias
+
+  # As tarefas só sobem com o caminho até os serviços da AWS pronto.
+  depends_on = [module.endpoints]
+}
+
+module "orcamento" {
+  source = "../../modulos/orcamento"
+
+  nome       = local.nome
+  limite_usd = var.orcamento_mensal_usd
+  emails     = var.emails_alerta
 }

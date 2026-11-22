@@ -1,30 +1,16 @@
-# O domínio do site apontando para o Elastic IP, na zona do Route 53.
-#
-# Só é usado quando a zona está na mesma conta. Fora dela (Registro.br,
-# Cloudflare...), o registro A é criado à mão com o output `ip_publico`.
-
-data "aws_route53_zone" "zona" {
-  name         = var.zona
-  private_zone = false
-}
+# O endereço do site apontando para o CloudFront, em IPv4 e IPv6. Registro
+# alias: sem custo de consulta no Route 53 e sem IP fixo para manter.
 
 resource "aws_route53_record" "site" {
-  zone_id = data.aws_route53_zone.zona.zone_id
-  name    = var.dominio
-  type    = "A"
-  ttl     = 300
-  records = [var.ip]
-}
+  for_each = toset(["A", "AAAA"])
 
-# CAA: só o Let's Encrypt pode emitir certificado para este domínio. Uma
-# autoridade que receber pedido de outra pessoa é obrigada a recusar.
-resource "aws_route53_record" "caa" {
-  zone_id = data.aws_route53_zone.zona.zone_id
+  zone_id = var.zona_id
   name    = var.dominio
-  type    = "CAA"
-  ttl     = 3600
-  records = [
-    "0 issue \"letsencrypt.org\"",
-    "0 issuewild \";\"",
-  ]
+  type    = each.value
+
+  alias {
+    name                   = var.dominio_cloudfront
+    zone_id                = var.zona_cloudfront
+    evaluate_target_health = false
+  }
 }

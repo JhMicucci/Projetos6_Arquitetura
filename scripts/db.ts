@@ -75,14 +75,25 @@ async function semear(): Promise<void> {
   }
 }
 
+/**
+ * Chave do lock consultivo do Postgres que serializa quem prepara o banco. No
+ * ECS o migrador roda dentro de cada tarefa, antes do site, e as tarefas sobem
+ * juntas: sem o lock, duas migrações e duas cargas iniciais concorreriam. Com
+ * ele, a segunda espera a primeira terminar e encontra "nada novo".
+ */
+const CHAVE_DO_LOCK = 70_626_001
+
 async function principal(): Promise<void> {
   cliente = new Client(await fonte!.configuracao())
   await cliente.connect()
   console.log(`Conectado: ${fonte!.descricao}`)
   try {
+    // O lock é da sessão: se o processo morrer, o Postgres o solta junto com a conexão.
+    await cliente.query('select pg_advisory_lock($1)', [CHAVE_DO_LOCK])
     if (comando === 'migrar' || comando === 'preparar') await migrar()
     if (comando === 'semear' || comando === 'preparar') await semear()
   } finally {
+    await cliente.query('select pg_advisory_unlock($1)', [CHAVE_DO_LOCK]).catch(() => {})
     await cliente.end()
   }
   console.log('')

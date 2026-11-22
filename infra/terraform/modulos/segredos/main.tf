@@ -1,13 +1,13 @@
-# Configuração do app em execução, no SSM Parameter Store.
+# Segredos do app num único segredo do Secrets Manager (JSON com uma chave por
+# variável). Um segredo só custa US$ 0,40/mês em vez de três, e o ECS entrega
+# cada chave como variável de ambiente (`valueFrom` com `:CHAVE::`).
 #
-# Dois caminhos:
-#   <caminho_app>/          vira o arquivo de ambiente do contêiner, chave a chave
-#   <caminho_implantacao>/  é lido só pelos scripts do CodeDeploy (domínio, e-mail ACME)
+# Secrets Manager e não SSM Parameter Store, de propósito: as tarefas estão em
+# sub-rede privada sem NAT, e o endpoint do Secrets Manager já existe por causa
+# do banco. O SSM exigiria mais um endpoint, que custa mais que o segredo.
 #
-# Os segredos nascem com recurso EFÊMERO e atributo write-only (value_wo): o
-# valor gerado vai para a AWS e não fica no state do Terraform. Para girar um
-# segredo, incremente `versao_segredos` e aplique; para trocar a senha por uma
-# escolhida pela equipe, use o CLI (docs/pipeline.md).
+# Valores gerados por recurso EFÊMERO e gravados por atributo WRITE-ONLY: não
+# ficam no state. Para girar, incremente `versao_segredos` e aplique.
 
 ephemeral "random_password" "admin_senha" {
   length  = 24
@@ -19,37 +19,26 @@ ephemeral "random_password" "cookie" {
   special = false
 }
 
-resource "aws_ssm_parameter" "admin_senha" {
-  name             = "${var.caminho_app}/ADMIN_SENHA"
-  description      = "Senha do painel administrativo (/admin/entrar)"
-  type             = "SecureString"
-  key_id           = var.chave_kms_arn
-  value_wo         = ephemeral.random_password.admin_senha.result
-  value_wo_version = var.versao_segredos
+# 32 caracteres que, em base64, decodificam em exatamente 32 bytes: o formato
+# que src/lib/auth/cripto.ts exige da SESSAO_CHAVE.
+ephemeral "random_password" "sessao" {
+  length  = 32
+  special = false
 }
 
-resource "aws_ssm_parameter" "cookie" {
-  name             = "${var.caminho_app}/ADMIN_COOKIE_SECRET"
-  description      = "Assinatura HMAC do cookie de sessão e do diário do protótipo"
-  type             = "SecureString"
-  key_id           = var.chave_kms_arn
-  value_wo         = ephemeral.random_password.cookie.result
-  value_wo_version = var.versao_segredos
+resource "aws_secretsmanager_secret" "app" {
+  name                    = "${var.nome}/app"
+  description             = "Segredos do Prumo: senha do painel, assinatura do cookie e chave da sessao"
+  kms_key_id              = var.chave_kms_arn
+  recovery_window_in_days = 0
 }
 
-# Variáveis de ambiente que não são segredo (RELEASE_*, por exemplo).
-resource "aws_ssm_parameter" "variaveis_app" {
-  for_each = var.variaveis_app
-
-  name  = "${var.caminho_app}/${each.key}"
-  type  = "String"
-  value = each.value
-}
-
-resource "aws_ssm_parameter" "implantacao" {
-  for_each = var.configuracao_implantacao
-
-  name  = "${var.caminho_implantacao}/${each.key}"
-  type  = "String"
-  value = each.value
+resource "aws_secretsmanager_secret_version" "app" {
+  secret_id = aws_secretsmanager_secret.app.id
+  secret_string_wo = jsonencode({
+    ADMIN_SENHA         = ephemeral.random_password.admin_senha.result
+    ADMIN_COOKIE_SECRET = ephemeral.random_password.cookie.result
+    SESSAO_CHAVE        = base64encode(ephemeral.random_password.sessao.result)
+  })
+  secret_string_wo_version = var.versao_segredos
 }

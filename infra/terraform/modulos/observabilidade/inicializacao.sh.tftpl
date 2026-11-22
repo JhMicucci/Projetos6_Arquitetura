@@ -1,0 +1,38 @@
+#!/bin/bash
+# Primeiro boot da EC2 de observabilidade (Amazon Linux 2023): Docker e o
+# contêiner grafana/otel-lgtm. Publica só 3000 (Grafana) e 4318 (OTLP HTTP);
+# o security group decide quem alcança cada uma.
+set -euo pipefail
+exec > >(tee -a /var/log/prumo-observabilidade.log) 2>&1
+
+# O Elastic IP é associado logo depois do boot; até lá a rede pode piscar.
+for tentativa in $(seq 1 30); do
+  dnf install -y docker && break
+  echo "rede ainda indisponivel (tentativa $tentativa)"; sleep 10
+done
+systemctl enable --now docker
+
+# A senha vai num arquivo 600 lido pelo Docker, e não na linha de comando
+# (onde apareceria na lista de processos).
+install -d -m 0700 /etc/prumo
+SENHA=$(aws ssm get-parameter --region ${regiao} --name ${parametro_senha} \
+  --with-decryption --query Parameter.Value --output text)
+umask 077
+cat > /etc/prumo/grafana.env <<ENV
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=$SENHA
+GF_AUTH_ANONYMOUS_ENABLED=false
+GF_AUTH_DISABLE_LOGIN_FORM=false
+GF_USERS_ALLOW_SIGN_UP=false
+ENV
+unset SENHA
+
+docker run -d --name lgtm --restart unless-stopped \
+  --env-file /etc/prumo/grafana.env \
+  -p 3000:3000 -p 4318:4318 \
+  ${imagem}
+
+# Sem SSH: o security group já fecha o 22, e aqui o serviço some também.
+systemctl disable --now sshd || true
+
+echo "observabilidade no ar"

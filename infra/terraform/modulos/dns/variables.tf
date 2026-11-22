@@ -1,14 +1,19 @@
-variable "zona" {
-  description = "Nome da zona hospedada pública no Route 53, ex.: exemplo.click."
+variable "zona_id" {
+  description = "ID da zona do Route 53."
   type        = string
 }
 
 variable "dominio" {
-  description = "Nome do site: a própria zona ou um subdomínio dela."
+  description = "Endereço do site."
   type        = string
 }
 
-variable "ip" {
-  description = "Elastic IP da instância."
+variable "dominio_cloudfront" {
+  description = "Endereço *.cloudfront.net da distribuição."
+  type        = string
+}
+
+variable "zona_cloudfront" {
+  description = "Zona hospedada do CloudFront."
   type        = string
 }

@@ -48,7 +48,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 
 COPY --from=dependencias /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run build && mkdir -p /app/cache-vazio
 
 # ---------------------------------------------------------------------------
 # Migrador, em dois passos. Primeiro o esbuild (que já vem com o `tsx`) junta
@@ -73,6 +73,9 @@ ENV NODE_ENV=production
 # (src/lib/dados/postgres/migrar.ts).
 COPY --from=migrador-build --chown=65532:65532 /app/dist/ ./
 COPY --chown=65532:65532 db ./db
+# Autoridades do RDS: o Aurora exige TLS e a conexão confere o certificado
+# (DATABASE_SSL_CA aponta para cá, ver src/lib/dados/postgres/conexao.ts).
+COPY --chown=65532:65532 certificados ./certificados
 
 USER 65532:65532
 # Padrão: migrar e, com o banco vazio, carregar a base sintética. Contas:
@@ -102,6 +105,11 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=65532:65532 /app/.next/standalone ./
 COPY --from=build --chown=65532:65532 /app/.next/static ./.next/static
 COPY --from=build --chown=65532:65532 /app/public ./public
+COPY --chown=65532:65532 certificados ./certificados
+# No ECS o sistema de arquivos é somente leitura e o cache do Next é um volume
+# efêmero montado aqui. O diretório nasce VAZIO e do usuário 65532 (o cache
+# do webpack do build ficaria dezenas de MB maior na imagem).
+COPY --from=build --chown=65532:65532 /app/cache-vazio ./.next/cache
 
 # 65532 é o usuário `nonroot` da imagem distroless; numérico para o
 # orquestrador conferir que não é root sem ler o /etc/passwd.

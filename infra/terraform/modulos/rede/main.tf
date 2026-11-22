@@ -1,35 +1,37 @@
-# Rede do ambiente: uma VPC, uma sub-rede pública numa zona, saída direta pelo
-# internet gateway (sem NAT: não há nada privado para esconder atrás dele).
+# Rede do ambiente: a VPC do desenho, em duas zonas de disponibilidade.
 #
-# A limitação de portas acontece em duas camadas independentes:
-#   1. NACL da sub-rede (sem estado): só 80 e 443 entram como conexão nova.
-#   2. Security group da instância (com estado), no módulo `servidor`.
-# Uma falha de configuração numa camada não abre a porta sozinha.
+#                 zona A            zona B
+#   pública      10.0.1.0/24       10.0.2.0/24     ALB e a EC2 de observabilidade
+#   app          10.0.11.0/24      10.0.12.0/24    tarefas Fargate (sem IP público)
+#   dados        10.0.21.0/24      10.0.22.0/24    Aurora
+#
+# SEM NAT GATEWAY, por FinOps: as sub-redes privadas não têm rota para a
+# internet. As tarefas falam com ECR, Secrets Manager e CloudWatch pelos VPC
+# Endpoints (módulo `endpoints`) e com o S3 pelo endpoint de gateway, gratuito.
 
 data "aws_availability_zones" "disponiveis" {
   state = "available"
 }
 
 locals {
-  zona = coalesce(var.zona, data.aws_availability_zones.disponiveis.names[0])
+  zonas = slice(data.aws_availability_zones.disponiveis.names, 0, 2)
 
-  # Entrada: cada CIDR permitido × cada porta pública.
-  entradas = {
-    for par in setproduct(var.cidrs_entrada, var.portas_publicas) :
-    "${par[1]}-${par[0]}" => { cidr = par[0], porta = par[1] }
-  }
+  # cidrsubnet(10.0.0.0/16, 8, n) = 10.0.n.0/24
+  publicas = { for i, zona in local.zonas : zona => cidrsubnet(var.cidr_vpc, 8, 1 + i) }
+  app      = { for i, zona in local.zonas : zona => cidrsubnet(var.cidr_vpc, 8, 11 + i) }
+  dados    = { for i, zona in local.zonas : zona => cidrsubnet(var.cidr_vpc, 8, 21 + i) }
 }
 
 resource "aws_vpc" "principal" {
   cidr_block           = var.cidr_vpc
   enable_dns_support   = true
-  enable_dns_hostnames = true
+  enable_dns_hostnames = true # exigido pelo DNS privado dos VPC Endpoints
 
   tags = { Name = var.nome }
 }
 
-# O security group padrão da VPC nasce aberto entre seus membros. Zerado aqui,
-# nenhum recurso cai nele por engano com acesso que ninguém pediu.
+# O security group padrão nasce aberto entre seus membros. Zerado, nenhum
+# recurso cai nele por engano com acesso que ninguém pediu.
 resource "aws_default_security_group" "fechado" {
   vpc_id = aws_vpc.principal.id
   tags   = { Name = "${var.nome}-padrao-fechado" }
@@ -41,14 +43,36 @@ resource "aws_internet_gateway" "principal" {
 }
 
 resource "aws_subnet" "publica" {
-  vpc_id            = aws_vpc.principal.id
-  cidr_block        = var.cidr_subrede
-  availability_zone = local.zona
+  for_each = local.publicas
 
-  # O IP público vem do Elastic IP associado à instância, não da sub-rede.
+  vpc_id            = aws_vpc.principal.id
+  availability_zone = each.key
+  cidr_block        = each.value
+
+  # Quem precisa de IP público recebe um Elastic IP; a sub-rede não distribui.
   map_public_ip_on_launch = false
 
-  tags = { Name = "${var.nome}-publica" }
+  tags = { Name = "${var.nome}-publica-${each.key}", Camada = "publica" }
+}
+
+resource "aws_subnet" "app" {
+  for_each = local.app
+
+  vpc_id            = aws_vpc.principal.id
+  availability_zone = each.key
+  cidr_block        = each.value
+
+  tags = { Name = "${var.nome}-app-${each.key}", Camada = "app" }
+}
+
+resource "aws_subnet" "dados" {
+  for_each = local.dados
+
+  vpc_id            = aws_vpc.principal.id
+  availability_zone = each.key
+  cidr_block        = each.value
+
+  tags = { Name = "${var.nome}-dados-${each.key}", Camada = "dados" }
 }
 
 resource "aws_route_table" "publica" {
@@ -56,88 +80,46 @@ resource "aws_route_table" "publica" {
   tags   = { Name = "${var.nome}-publica" }
 }
 
-resource "aws_route" "saida_internet" {
+resource "aws_route" "publica_internet" {
   route_table_id         = aws_route_table.publica.id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.principal.id
 }
 
 resource "aws_route_table_association" "publica" {
-  subnet_id      = aws_subnet.publica.id
+  for_each = aws_subnet.publica
+
+  subnet_id      = each.value.id
   route_table_id = aws_route_table.publica.id
 }
 
-# ---------------------------------------------------------------------------
-# NACL: a primeira camada de portas
-# ---------------------------------------------------------------------------
-
-resource "aws_network_acl" "publica" {
-  vpc_id     = aws_vpc.principal.id
-  subnet_ids = [aws_subnet.publica.id]
-  tags       = { Name = "${var.nome}-publica" }
+# Privada: só a rota local da VPC (e a do S3, que o módulo `endpoints` põe).
+resource "aws_route_table" "privada" {
+  vpc_id = aws_vpc.principal.id
+  tags   = { Name = "${var.nome}-privada" }
 }
 
-# HTTP e HTTPS de quem pode acessar o site. O 80 existe para o desafio ACME do
-# Let's Encrypt e para redirecionar ao 443; nenhuma página é servida nele.
-resource "aws_network_acl_rule" "entrada_publica" {
-  for_each = local.entradas
+resource "aws_route_table_association" "app" {
+  for_each = aws_subnet.app
 
-  network_acl_id = aws_network_acl.publica.id
-  rule_number    = 100 + index(keys(local.entradas), each.key)
-  egress         = false
-  protocol       = "tcp"
-  rule_action    = "allow"
-  cidr_block     = each.value.cidr
-  from_port      = each.value.porta
-  to_port        = each.value.porta
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.privada.id
 }
 
-# A NACL não tem estado: a resposta das conexões que a instância abre (ECR,
-# SSM, Let's Encrypt) volta numa porta efêmera e precisa desta regra. O
-# security group, que tem estado, continua recusando conexão nova nessas portas
-# (a faixa inclui a 3389, por isso o Trivy reclama; o SG não a abre).
-# trivy:ignore:AWS-0105
-resource "aws_network_acl_rule" "entrada_retorno" {
-  network_acl_id = aws_network_acl.publica.id
-  rule_number    = 900
-  egress         = false
-  protocol       = "tcp"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  from_port      = 1024
-  to_port        = 65535
-}
+resource "aws_route_table_association" "dados" {
+  for_each = aws_subnet.dados
 
-# Saída: HTTPS para os serviços da AWS e para o Let's Encrypt.
-resource "aws_network_acl_rule" "saida_https" {
-  network_acl_id = aws_network_acl.publica.id
-  rule_number    = 100
-  egress         = true
-  protocol       = "tcp"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  from_port      = 443
-  to_port        = 443
-}
-
-# Saída: a resposta aos visitantes, que vai para a porta efêmera deles.
-resource "aws_network_acl_rule" "saida_retorno" {
-  network_acl_id = aws_network_acl.publica.id
-  rule_number    = 900
-  egress         = true
-  protocol       = "tcp"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  from_port      = 1024
-  to_port        = 65535
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.privada.id
 }
 
 # ---------------------------------------------------------------------------
-# Flow logs: o registro do que tentou entrar e foi recusado
+# Flow logs só do que foi RECUSADO: é a evidência de que as portas fechadas
+# estão fechadas, pelo menor volume (e custo) de log possível.
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "fluxo" {
-  name              = "${var.prefixo_logs}/vpc-fluxo"
+  name              = "${var.prefixo_logs}/vpc-recusas"
   retention_in_days = var.retencao_logs_dias
   kms_key_id        = var.chave_kms_arn
 }
@@ -159,11 +141,7 @@ resource "aws_iam_role" "fluxo" {
 
 data "aws_iam_policy_document" "fluxo_escrita" {
   statement {
-    actions = [
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:DescribeLogStreams",
-    ]
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
     resources = ["${aws_cloudwatch_log_group.fluxo.arn}:*"]
   }
 }
@@ -176,7 +154,7 @@ resource "aws_iam_role_policy" "fluxo" {
 
 resource "aws_flow_log" "principal" {
   vpc_id                   = aws_vpc.principal.id
-  traffic_type             = "ALL"
+  traffic_type             = "REJECT"
   log_destination_type     = "cloud-watch-logs"
   log_destination          = aws_cloudwatch_log_group.fluxo.arn
   iam_role_arn             = aws_iam_role.fluxo.arn
