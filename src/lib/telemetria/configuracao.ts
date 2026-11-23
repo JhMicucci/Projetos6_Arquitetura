@@ -20,7 +20,7 @@ import { PgInstrumentation, type PgInstrumentationConfig } from '@opentelemetry/
  *   requisições, só ruído no Tempo e volume a mais para guardar.
  */
 export const CONFIG_PG: PgInstrumentationConfig = {
-  enhancedDatabaseReporting: false,
+  enhancedDatabaseReporting: true, // E21 (teste de reprovação): valores da consulta no trace
   requireParentSpan: true,
   ignoreConnectSpans: true,
 }
