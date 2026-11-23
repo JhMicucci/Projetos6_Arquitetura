@@ -257,13 +257,17 @@ data "aws_iam_policy_document" "imagem" {
     resources = ["*"]
   }
 
+  # Push da imagem nova e pull da que já existe: um Release change roda o
+  # mesmo commit, e o imagem.sh baixa a imagem publicada para passar o Trivy
+  # de novo. Sem GetDownloadUrlForLayer esse caminho falhava (visto no E24).
   statement {
-    sid = "PushDaImagem"
+    sid = "PushEPullDaImagem"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:DescribeImages",
+      "ecr:GetDownloadUrlForLayer",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
       "ecr:UploadLayerPart",
