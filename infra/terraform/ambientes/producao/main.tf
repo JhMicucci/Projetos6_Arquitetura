@@ -9,6 +9,7 @@
 # em outra raiz (infra/terraform/cicd), para o pipeline não aplicar a si mesmo.
 # Passo a passo: docs/pipeline.md.
 
+
 provider "aws" {
   region = var.regiao
 
