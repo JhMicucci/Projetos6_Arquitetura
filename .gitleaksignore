@@ -1,0 +1,13 @@
+# Exceções do Gitleaks por achado: cada linha é o fingerprint de UM segredo,
+# num commit, arquivo e linha exatos (commit:arquivo:regra:linha). Nunca um
+# arquivo inteiro nem uma regra inteira; essas vão no .gitleaks.toml, com o
+# valor. Toda linha aqui leva, acima dela, o porquê e quem validou.
+
+# E22 (teste de reprovação, evidência da documentação): chave de acesso
+# INVENTADA, no formato real da AWS (AKIA + 16 caracteres), de nenhuma conta
+# e sem a parte secreta. Entrou de propósito no commit c66d7c3 para provar que
+# a etapa Segurança barra credencial commitada. O arquivo saiu no commit
+# seguinte, mas o histórico guarda a chave para sempre, e o Gitleaks varre o
+# histórico inteiro: por isso a exceção. Não há credencial a revogar.
+# Validado por João Micucci.
+c66d7c3c81bd9500a4b903a9a93e98fdac552d87:infra/credenciais-deploy.txt:aws-access-token:4

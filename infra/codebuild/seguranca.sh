@@ -34,13 +34,16 @@ etapa() {
 
 # 1. Nenhum segredo no histórico inteiro do Git, não só na árvore atual: um
 #    segredo apagado num commit seguinte continua no clone de qualquer um.
+#    --verbose põe cada achado no log (regra, arquivo, linha, commit e o
+#    fingerprint que iria para o .gitleaksignore); o --redact mascara o valor.
+#    Exceção por achado: .gitleaksignore, com o porquê ao lado.
 segredos_no_historico() {
   if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "false" ]; then
-    gitleaks git --config .gitleaks.toml --redact --no-banner \
+    gitleaks git --config .gitleaks.toml --redact --verbose --no-banner \
       --report-format junit --report-path "$RELATORIOS/gitleaks.xml" .
   else
     echo "aviso: sem histórico completo; varrendo só os arquivos da árvore"
-    gitleaks dir --config .gitleaks.toml --redact --no-banner \
+    gitleaks dir --config .gitleaks.toml --redact --verbose --no-banner \
       --report-format junit --report-path "$RELATORIOS/gitleaks.xml" .
   fi
 }

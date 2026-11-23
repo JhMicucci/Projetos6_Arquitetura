@@ -1,4 +1,0 @@
-# E22 (teste de reprovação): chave de acesso INVENTADA, no formato real da
-# AWS, de nenhuma conta e sem a parte secreta. Simula alguém commitando a
-# credencial do deploy "só para testar". O Gitleaks deve barrar.
-aws_access_key_id = AKIAZ7Q4XK2MVR3TNWPL
