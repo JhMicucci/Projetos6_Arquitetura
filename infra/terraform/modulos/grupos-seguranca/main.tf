@@ -171,16 +171,6 @@ resource "aws_vpc_security_group_ingress_rule" "observabilidade_grafana" {
   cidr_ipv4         = each.value
 }
 
-# E20 (teste de reprovação): SSH aberto para a internet. O Trivy deve barrar.
-resource "aws_vpc_security_group_ingress_rule" "observabilidade_ssh" {
-  security_group_id = aws_security_group.observabilidade.id
-  description       = "SSH para depurar a EC2"
-  ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
-  cidr_ipv4         = "0.0.0.0/0"
-}
-
 # A EC2 fica na sub-rede pública e baixa a imagem do Grafana, os pacotes do
 # sistema e fala com o Session Manager pela internet, tudo em 443. O destino é
 # aberto porque esses serviços não têm IP fixo; a restrição está na porta.
