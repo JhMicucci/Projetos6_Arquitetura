@@ -22,6 +22,7 @@ phases:
     runtime-versions:
       nodejs: 22
     commands:
+      - docker rm -f postgres || true
       - >-
         docker run -d --name postgres -p 5432:5432
         -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=prumo_teste
