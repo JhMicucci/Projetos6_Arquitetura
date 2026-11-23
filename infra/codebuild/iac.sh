@@ -2,7 +2,7 @@
 # Fitness functions da infraestrutura como código. Todas rodam e o script só
 # reprova no fim, com a lista do que falhou.
 #
-#   bash infra/codebuild/ferramentas.sh trivy terraform tflint
+#   bash infra/codebuild/ferramentas.sh trivy terraform tflint tflint_aws
 #   bash infra/codebuild/iac.sh
 set -uo pipefail
 

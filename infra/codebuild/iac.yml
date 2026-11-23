@@ -16,7 +16,7 @@ phases:
   install:
     commands:
       - mkdir -p "$TF_PLUGIN_CACHE_DIR" "$TFLINT_PLUGIN_DIR"
-      - bash infra/codebuild/ferramentas.sh trivy terraform tflint
+      - bash infra/codebuild/ferramentas.sh trivy terraform tflint tflint_aws
   build:
     commands:
       - bash infra/codebuild/iac.sh
