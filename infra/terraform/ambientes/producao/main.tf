@@ -79,10 +79,6 @@ module "banco" {
   chave_kms_arn      = module.criptografia.chave_arn
   acu_minima         = var.aurora_acu_minima
   acu_maxima         = var.aurora_acu_maxima
-
-  # E23 (teste de reprovação): trocar o usuário mestre obriga a AWS a recriar
-  # o cluster, o que apagaria o banco. A trava do Plano deve recusar.
-  usuario_mestre = "prumo_dono"
 }
 
 module "segredos" {
